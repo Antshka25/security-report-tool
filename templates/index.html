@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SecureCheck — AI Security Reports for Small Business</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #07080f;
+      --panel:    #0c0e1a;
+      --card:     #10131f;
+      --border:   #1a2035;
+      --accent:   #7c3aed;
+      --accent2:  #0ea5e9;
+      --high:     #ef4444;
+      --medium:   #f59e0b;
+      --low:      #10b981;
+      --white:    #f0f4ff;
+      --muted:    #94a3b8;
+      --dim:      #4a5568;
+    }
+    body { background: var(--bg); color: var(--white); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+    /* Nav */
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 18px 40px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgba(7,8,15,0.95); backdrop-filter: blur(12px); z-index: 100; }
+    .logo { font-size: 20px; font-weight: 800; color: var(--white); display: flex; align-items: center; gap: 8px; }
+    .logo span { color: var(--accent); }
+    nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+    nav a:hover { color: var(--white); }
+
+    /* Hero */
+    .hero { text-align: center; padding: 80px 20px 60px; max-width: 700px; margin: 0 auto; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.3); border-radius: 100px; padding: 5px 14px; font-size: 13px; color: #a78bfa; margin-bottom: 24px; }
+    h1 { font-size: clamp(32px, 5vw, 52px); font-weight: 800; line-height: 1.15; margin-bottom: 20px; }
+    h1 em { font-style: normal; color: var(--accent); }
+    .hero p { font-size: 18px; color: var(--muted); line-height: 1.6; max-width: 520px; margin: 0 auto 36px; }
+
+    /* Scan form card */
+    .scan-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 36px; max-width: 620px; margin: 0 auto 60px; }
+    .scan-card h2 { font-size: 18px; margin-bottom: 6px; }
+    .scan-card p { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+    .field input, .field select {
+      width: 100%; background: #090b16; border: 1px solid var(--border); border-radius: 8px;
+      color: var(--white); font-size: 15px; padding: 12px 14px; outline: none; transition: border-color 0.2s;
+    }
+    .field input:focus, .field select:focus { border-color: var(--accent); }
+    .field input::placeholder { color: var(--dim); }
+    .scan-types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    .scan-type { background: #090b16; border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s; text-align: center; }
+    .scan-type:hover { border-color: var(--accent); }
+    .scan-type.active { border-color: var(--accent); background: rgba(124,58,237,0.12); }
+    .scan-type .name { font-weight: 700; font-size: 13px; margin-bottom: 3px; }
+    .scan-type .desc { font-size: 11px; color: var(--muted); }
+    .btn-scan {
+      width: 100%; background: var(--accent); color: white; border: none;
+      border-radius: 10px; padding: 15px; font-size: 16px; font-weight: 700;
+      cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-scan:hover { background: #6d28d9; transform: translateY(-1px); }
+    .btn-scan:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* Progress */
+    #progress-section { display: none; }
+    .progress-bar-wrap { background: var(--border); border-radius: 100px; height: 6px; margin: 16px 0 8px; overflow: hidden; }
+    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 100px; transition: width 0.4s ease; width: 0%; }
+    .progress-step { font-size: 13px; color: var(--muted); }
+    .progress-icon { font-size: 32px; margin-bottom: 12px; animation: spin 2s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Result */
+    #result-section { display: none; }
+    .result-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; text-align: center; }
+    .risk-score-big { font-size: 64px; font-weight: 900; line-height: 1; }
+    .risk-label { font-size: 18px; font-weight: 700; margin: 4px 0 16px; }
+    .result-stats { display: flex; gap: 16px; justify-content: center; margin: 20px 0; }
+    .stat { background: #090b16; border-radius: 8px; padding: 12px 20px; text-align: center; }
+    .stat-num { font-size: 24px; font-weight: 800; }
+    .stat-label { font-size: 12px; color: var(--muted); }
+    .btn-group { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+    .btn { padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; border: none; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-secondary { background: transparent; color: var(--white); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); }
+
+    /* Error */
+    .error-box { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 14px; color: #f87171; font-size: 14px; margin-top: 16px; display: none; }
+
+    /* Features */
+    .features { max-width: 900px; margin: 0 auto 80px; padding: 0 20px; }
+    .features h2 { text-align: center; font-size: 28px; margin-bottom: 8px; }
+    .features > p { text-align: center; color: var(--muted); margin-bottom: 40px; }
+    .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+    .feature { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    .feature-icon { font-size: 28px; margin-bottom: 12px; }
+    .feature h3 { font-size: 15px; margin-bottom: 6px; }
+    .feature p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    /* Social proof */
+    .pricing { max-width: 700px; margin: 0 auto 80px; padding: 0 20px; text-align: center; }
+    .pricing h2 { font-size: 28px; margin-bottom: 40px; }
+    .price-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .price-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 28px; }
+    .price-card.featured { border-color: var(--accent); background: rgba(124,58,237,0.08); }
+    .price { font-size: 36px; font-weight: 900; }
+    .price-sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+    .price-features { list-style: none; text-align: left; font-size: 13px; color: var(--muted); }
+    .price-features li { padding: 5px 0; }
+    .price-features li::before { content: "✓ "; color: var(--low); font-weight: 700; }
+
+    footer { border-top: 1px solid var(--border); text-align: center; padding: 30px; font-size: 13px; color: var(--dim); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo"><span>⬡</span> SecureCheck</div>
+  <a href="#pricing">Pricing</a>
+</nav>
+
+<div class="hero">
+  <div class="badge">⚡ AI-Powered · Takes ~2 minutes</div>
+  <h1>Know if your business<br>is <em>vulnerable</em> online</h1>
+  <p>Enter your website or IP. Get a professional security report in plain English with risk ratings and exactly what to fix.</p>
+</div>
+
+<!-- Scan Card -->
+<div class="scan-card">
+  <h2>Run a Free Security Scan</h2>
+  <p>No account needed. Enter your business website or server IP below.</p>
+
+  <div class="field">
+    <label>Website URL or IP Address</label>
+    <input type="text" id="target" placeholder="yourbusiness.com or 192.168.1.1" autocomplete="off" />
+  </div>
+
+  <div class="field">
+    <label>Business Name (optional — appears on your PDF)</label>
+    <input type="text" id="business-name" placeholder="Acme Plumbing Co." />
+  </div>
+
+  <div class="field">
+    <label>Scan Depth</label>
+    <div class="scan-types">
+      <div class="scan-type" data-type="quick">
+        <div class="name">⚡ Quick</div>
+        <div class="desc">Top 100 ports<br>~30 seconds</div>
+      </div>
+      <div class="scan-type active" data-type="standard">
+        <div class="name">🔍 Standard</div>
+        <div class="desc">Top 1000 ports<br>~2 minutes</div>
+      </div>
+      <div class="scan-type" data-type="full">
+        <div class="name">🔬 Full</div>
+        <div class="desc">All ports + scripts<br>~10 minutes</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-scan" id="btn-scan" onclick="startScan()">
+    🔒 Run Security Scan
+  </button>
+
+  <div class="error-box" id="error-box"></div>
+
+  <!-- Progress -->
+  <div id="progress-section" style="margin-top:24px; text-align:center;">
+    <div class="progress-icon">⚙️</div>
+    <div id="progress-step" class="progress-step">Starting…</div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div style="font-size:12px; color:var(--dim);">This may take 1-3 minutes. Please don't close this page.</div>
+  </div>
+
+  <!-- Result -->
+  <div id="result-section" style="margin-top:24px;">
+    <div class="result-card">
+      <div style="color:var(--muted); font-size:13px; margin-bottom:8px;">OVERALL RISK SCORE</div>
+      <div class="risk-score-big" id="result-score">—</div>
+      <div class="risk-label" id="result-label">—</div>
+      <div class="result-stats">
+        <div class="stat">
+          <div class="stat-num" id="stat-ports">0</div>
+          <div class="stat-label">Open Ports</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" style="color:var(--high)" id="stat-high">0</div>
+          <div class="stat-label">High Risk</div>
+        </div>
+      </div>
+      <div class="btn-group">
+        <a href="#" class="btn btn-primary" id="btn-view">📋 View Report</a>
+        <a href="#" class="btn btn-secondary" id="btn-download">⬇️ Download PDF</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Features -->
+<div class="features">
+  <h2>Everything a small business needs</h2>
+  <p>No security knowledge required. We do the technical work and explain it in plain English.</p>
+  <div class="feature-grid">
+    <div class="feature">
+      <div class="feature-icon">🔍</div>
+      <h3>Real Network Scanning</h3>
+      <p>We use industry-standard Nmap to scan your actual public-facing services — the same tools used by professional security teams.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🤖</div>
+      <h3>AI-Powered Plain English</h3>
+      <p>GPT-4o turns raw technical scan data into clear explanations of what each risk means for your business and exactly how to fix it.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📄</div>
+      <h3>Professional PDF Report</h3>
+      <p>Download a branded PDF report you can share with your IT provider or keep on file. Risk-rated findings with specific action items.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">⚡</div>
+      <h3>Results in Minutes</h3>
+      <p>A standard scan completes in 1-3 minutes. No waiting days for a consultant callback. Know your risk posture right now.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🎯</div>
+      <h3>Risk-Prioritized</h3>
+      <p>Findings sorted by severity. HIGH risks shown first. Each item includes urgency rating so you know what to fix immediately vs. next month.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔒</div>
+      <h3>What We Check</h3>
+      <p>Open ports, exposed services (RDP, SMB, databases), unencrypted protocols, remote access risks, and common ransomware entry points.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Pricing -->
+<div class="pricing" id="pricing">
+  <h2>Simple, honest pricing</h2>
+  <div class="price-cards">
+    <div class="price-card">
+      <div class="price">$49</div>
+      <div class="price-sub">One-time scan</div>
+      <ul class="price-features">
+        <li>Full port scan</li>
+        <li>AI-written report</li>
+        <li>PDF download</li>
+        <li>Risk score + findings</li>
+        <li>Action items</li>
+      </ul>
+    </div>
+    <div class="price-card featured">
+      <div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px;">MOST POPULAR</div>
+      <div class="price">$299<span style="font-size:16px;font-weight:400">/mo</span></div>
+      <div class="price-sub">Monthly monitoring</div>
+      <ul class="price-features">
+        <li>Scan every month</li>
+        <li>Compare to last month</li>
+        <li>Email alerts for new risks</li>
+        <li>Unlimited re-scans</li>
+        <li>Priority support</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<footer>
+  © 2026 SecureCheck · For informational purposes only · Not a substitute for professional security assessment
+</footer>
+
+<script>
+  let selectedScanType = 'standard';
+  let currentJobId = null;
+  let pollInterval = null;
+
+  // Scan type selection
+  document.querySelectorAll('.scan-type').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.scan-type').forEach(e => e.classList.remove('active'));
+      el.classList.add('active');
+      selectedScanType = el.dataset.type;
+    });
+  });
+
+  function showError(msg) {
+    const box = document.getElementById('error-box');
+    box.textContent = '⚠️ ' + msg;
+    box.style.display = 'block';
+  }
+
+  function hideError() {
+    document.getElementById('error-box').style.display = 'none';
+  }
+
+  async function startScan() {
+    hideError();
+    const target = document.getElementById('target').value.trim();
+    const biz    = document.getElementById('business-name').value.trim();
+
+    if (!target) {
+      showError('Please enter a website URL or IP address');
+      return;
+    }
+
+    // UI
+    document.getElementById('btn-scan').disabled = true;
+    document.getElementById('btn-scan').textContent = '⏳ Scanning…';
+    document.getElementById('progress-section').style.display = 'block';
+    document.getElementById('result-section').style.display   = 'none';
+
+    try {
+      const res = await fetch('/scan', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          target, business_name: biz, scan_type: selectedScanType
+        })
+      });
+      const data = await res.json();
+      if (data.error) { showError(data.error); resetBtn(); return; }
+
+      currentJobId = data.job_id;
+      startPolling();
+
+    } catch (e) {
+      showError('Network error — please try again');
+      resetBtn();
+    }
+  }
+
+  function resetBtn() {
+    const btn = document.getElementById('btn-scan');
+    btn.disabled = false;
+    btn.innerHTML = '🔒 Run Security Scan';
+    document.getElementById('progress-section').style.display = 'none';
+  }
+
+  function startPolling() {
+    pollInterval = setInterval(async () => {
+      try {
+        const res  = await fetch(`/status/${currentJobId}`);
+        const data = await res.json();
+
+        document.getElementById('progress-step').textContent = data.step || '';
+        document.getElementById('progress-bar').style.width  = (data.progress || 0) + '%';
+
+        if (data.status === 'done') {
+          clearInterval(pollInterval);
+          showResult(data.summary);
+        } else if (data.status === 'error') {
+          clearInterval(pollInterval);
+          showError(data.error || 'Scan failed — please try again');
+          resetBtn();
+        }
+      } catch (e) {
+        // network hiccup, keep polling
+      }
+    }, 1500);
+  }
+
+  const RISK_COLORS = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#f59e0b', LOW: '#10b981' };
+
+  function showResult(summary) {
+    document.getElementById('progress-section').style.display = 'none';
+    document.getElementById('result-section').style.display   = 'block';
+    document.getElementById('btn-scan').disabled = false;
+    document.getElementById('btn-scan').innerHTML = '🔒 Scan Again';
+
+    const col = RISK_COLORS[summary.risk_label] || '#10b981';
+    document.getElementById('result-score').textContent = summary.risk_score + '/10';
+    document.getElementById('result-score').style.color  = col;
+    document.getElementById('result-label').textContent  = summary.risk_label + ' RISK';
+    document.getElementById('result-label').style.color  = col;
+    document.getElementById('stat-ports').textContent    = summary.total_ports;
+    document.getElementById('stat-high').textContent     = summary.high_findings;
+
+    document.getElementById('btn-view').href     = `/report/${currentJobId}`;
+    document.getElementById('btn-download').href = `/download/${currentJobId}`;
+  }
+
+  // Allow Enter to start scan
+  document.getElementById('target').addEventListener('keydown', e => {
+    if (e.key === 'Enter') startScan();
+  });
+</script>
+
+</body>
+</html>

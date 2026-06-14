@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security Report — {{ report.meta.business_name }}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:     #07080f;
+      --panel:  #0c0e1a;
+      --card:   #10131f;
+      --border: #1a2035;
+      --accent: #7c3aed;
+      --white:  #f0f4ff;
+      --muted:  #94a3b8;
+      --dim:    #4a5568;
+      --high:   #ef4444;
+      --medium: #f59e0b;
+      --low:    #10b981;
+      --info:   #64748b;
+    }
+    body { background: var(--bg); color: var(--white); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Nav */
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 40px; border-bottom: 1px solid var(--border); background: rgba(7,8,15,0.95); position: sticky; top: 0; z-index: 10; }
+    .logo { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; color: var(--white); }
+    .logo span { color: var(--accent); }
+    .nav-actions { display: flex; gap: 12px; }
+    .btn { padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; border: none; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-secondary { background: transparent; color: var(--white); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); }
+
+    /* Layout */
+    .page { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
+
+    /* Header card */
+    .header-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 36px; margin-bottom: 24px; display: flex; gap: 40px; align-items: center; flex-wrap: wrap; }
+    .score-circle { flex-shrink: 0; width: 120px; height: 120px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 4px solid; }
+    .score-circle .num { font-size: 36px; font-weight: 900; line-height: 1; }
+    .score-circle .denom { font-size: 13px; color: var(--muted); }
+    .header-info h1 { font-size: 22px; margin-bottom: 4px; }
+    .header-info .sub { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+    .meta-row { display: flex; gap: 24px; flex-wrap: wrap; }
+    .meta-item { font-size: 12px; color: var(--muted); }
+    .meta-item strong { color: var(--white); display: block; font-size: 13px; }
+    .risk-badge { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 100px; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; }
+
+    /* Section */
+    section { margin-bottom: 28px; }
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 12px; padding-left: 4px; }
+
+    /* Executive summary */
+    .exec-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    .exec-card p { font-size: 15px; line-height: 1.7; color: #d1d5db; }
+    .risk-explain { margin-top: 12px; font-size: 13px; color: var(--muted); }
+
+    /* Recommendations */
+    .rec-list { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .rec-item { display: flex; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--border); align-items: flex-start; }
+    .rec-item:last-child { border-bottom: none; }
+    .rec-num { flex-shrink: 0; width: 24px; height: 24px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; margin-top: 1px; }
+    .rec-text { font-size: 14px; color: #d1d5db; }
+
+    /* Stats row */
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+    .stat-num { font-size: 28px; font-weight: 900; }
+    .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* Findings */
+    .finding { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+    .finding-header { display: flex; align-items: center; gap: 12px; padding: 16px 18px; cursor: pointer; user-select: none; }
+    .finding-header:hover { background: rgba(255,255,255,0.02); }
+    .sev-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .finding-title { font-weight: 700; font-size: 14px; flex: 1; }
+    .finding-port { font-size: 12px; color: var(--muted); }
+    .sev-badge { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; padding: 3px 8px; border-radius: 4px; }
+    .urgency-tag { font-size: 11px; color: var(--muted); }
+    .chevron { color: var(--dim); transition: transform 0.2s; font-size: 12px; }
+    .finding.open .chevron { transform: rotate(180deg); }
+    .finding-body { display: none; padding: 0 18px 18px; }
+    .finding.open .finding-body { display: block; }
+    .finding-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 4px; }
+    .finding-section label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 5px; }
+    .finding-section p { font-size: 13px; color: #d1d5db; line-height: 1.6; }
+
+    /* Positive + next steps */
+    .green-card { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); border-radius: 12px; padding: 20px; }
+    .green-card p { font-size: 14px; color: #a7f3d0; line-height: 1.6; }
+    .next-card { background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.2); border-radius: 12px; padding: 20px; }
+    .next-card p { font-size: 14px; color: #c4b5fd; line-height: 1.6; }
+
+    /* Disclaimer */
+    .disclaimer { font-size: 11px; color: var(--dim); text-align: center; margin-top: 40px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+
+    /* Severity colors */
+    .sev-HIGH    { background: rgba(239,68,68,0.15);  color: #f87171; }
+    .sev-MEDIUM  { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .sev-LOW     { background: rgba(16,185,129,0.15); color: #34d399; }
+    .sev-INFO    { background: rgba(100,116,139,0.15);color: #94a3b8; }
+    .dot-HIGH    { background: #ef4444; }
+    .dot-MEDIUM  { background: #f59e0b; }
+    .dot-LOW     { background: #10b981; }
+    .dot-INFO    { background: #64748b; }
+    .risk-CRITICAL { border-color: #ef4444; color: #ef4444; }
+    .risk-HIGH     { border-color: #f97316; color: #f97316; }
+    .risk-MEDIUM   { border-color: #f59e0b; color: #f59e0b; }
+    .risk-LOW      { border-color: #10b981; color: #10b981; }
+
+    @media (max-width: 640px) {
+      nav { padding: 14px 16px; }
+      .page { padding: 24px 12px 60px; }
+      .header-card { flex-direction: column; align-items: flex-start; gap: 20px; }
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .finding-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo"><span>⬡</span> SecureCheck</div>
+  <div class="nav-actions">
+    <a href="/download/{{ job_id }}" class="btn btn-primary">⬇️ Download PDF</a>
+    <a href="/" class="btn btn-secondary">New Scan</a>
+  </div>
+</nav>
+
+<div class="page">
+
+  <!-- Header -->
+  <div class="header-card">
+    {% set score = report.risk_score | int %}
+    {% set rlabel = report.risk_label | upper %}
+    <div class="score-circle risk-{{ rlabel }}">
+      <div class="num">{{ score }}</div>
+      <div class="denom">/10</div>
+    </div>
+    <div class="header-info">
+      <h1>Security Report{% if report.meta.business_name and report.meta.business_name != 'Your Business' %} — {{ report.meta.business_name }}{% endif %}</h1>
+      <div class="sub">{{ report.meta.target }}</div>
+      <div style="margin-bottom:14px;">
+        <span class="risk-badge sev-{{ rlabel }}">{{ rlabel }} RISK</span>
+      </div>
+      <div class="meta-row">
+        <div class="meta-item"><strong>Scan Date</strong>{{ report.meta.scan_date }}</div>
+        <div class="meta-item"><strong>Scan Time</strong>{{ report.meta.scan_time }}</div>
+        <div class="meta-item"><strong>Open Ports</strong>{{ report.meta.total_ports }}</div>
+        <div class="meta-item"><strong>AI Model</strong>{{ report.meta.model }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  {% set high_count = report.findings | selectattr('severity','equalto','HIGH') | list | length %}
+  {% set med_count  = report.findings | selectattr('severity','equalto','MEDIUM') | list | length %}
+  {% set low_count  = report.findings | selectattr('severity','in',['LOW','INFO']) | list | length %}
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--high)">{{ high_count }}</div>
+      <div class="stat-label">High Risk</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--medium)">{{ med_count }}</div>
+      <div class="stat-label">Medium Risk</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--low)">{{ low_count }}</div>
+      <div class="stat-label">Low / Info</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">{{ report.meta.total_ports }}</div>
+      <div class="stat-label">Total Open Ports</div>
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  <section>
+    <div class="section-title">📋 Executive Summary</div>
+    <div class="exec-card">
+      <p>{{ report.executive_summary }}</p>
+      {% if report.risk_explanation %}
+      <div class="risk-explain">{{ report.risk_explanation }}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Top Recommendations -->
+  {% if report.top_recommendations %}
+  <section>
+    <div class="section-title">⚡ Top Recommendations</div>
+    <div class="rec-list">
+      {% for rec in report.top_recommendations %}
+      <div class="rec-item">
+        <div class="rec-num">{{ loop.index }}</div>
+        <div class="rec-text">{{ rec }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Findings -->
+  {% if report.findings %}
+  <section>
+    <div class="section-title">🔍 Detailed Findings ({{ report.findings | length }})</div>
+
+    {% for f in report.findings %}
+    {% set sev = f.severity | upper %}
+    <div class="finding" id="finding-{{ loop.index }}">
+      <div class="finding-header" onclick="toggleFinding('finding-{{ loop.index }}')">
+        <div class="sev-dot dot-{{ sev }}"></div>
+        <div class="finding-title">{{ f.title or (f.service ~ ' — Port ' ~ f.port) }}</div>
+        <div class="finding-port">Port {{ f.port }}</div>
+        <span class="sev-badge sev-{{ sev }}">{{ sev }}</span>
+        {% if f.urgency %}
+        <span class="urgency-tag">{{ f.urgency }}</span>
+        {% endif %}
+        <span class="chevron">▼</span>
+      </div>
+      <div class="finding-body">
+        <div class="finding-grid">
+          <div class="finding-section">
+            <label>What it is</label>
+            <p>{{ f.what_it_is or '—' }}</p>
+          </div>
+          <div class="finding-section">
+            <label>Business Risk</label>
+            <p>{{ f.business_risk or '—' }}</p>
+          </div>
+          <div class="finding-section">
+            <label>How to Fix</label>
+            <p>{{ f.how_to_fix or '—' }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <!-- Positive -->
+  {% if report.positive_findings %}
+  <section>
+    <div class="section-title">✅ What You're Doing Right</div>
+    <div class="green-card"><p>{{ report.positive_findings }}</p></div>
+  </section>
+  {% endif %}
+
+  <!-- Next Steps -->
+  {% if report.next_steps %}
+  <section>
+    <div class="section-title">🚀 Next Steps</div>
+    <div class="next-card"><p>{{ report.next_steps }}</p></div>
+  </section>
+  {% endif %}
+
+  <div style="text-align:center; margin: 36px 0 24px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+    <a href="/download/{{ job_id }}" class="btn btn-primary" style="font-size:15px; padding:14px 32px;">
+      ⬇️ Download PDF
+    </a>
+    <button class="btn btn-secondary" onclick="openEmailModal()" style="font-size:15px; padding:14px 32px;">
+      📧 Email This Report
+    </button>
+  </div>
+
+  <div class="disclaimer">
+    {{ report.disclaimer or 'This report is for informational purposes only. It represents a point-in-time snapshot of publicly accessible network services. Not a substitute for a professional penetration test or security audit.' }}<br>
+    Generated by SecureCheck · {{ report.meta.scan_date }}
+  </div>
+
+</div>
+
+<!-- Email Modal -->
+<div id="email-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center;">
+  <div style="background:#10131f; border:1px solid #1a2035; border-radius:16px; padding:32px; max-width:420px; width:90%; margin:20px;">
+    <h2 style="font-size:18px; margin-bottom:6px;">📧 Email This Report</h2>
+    <p style="color:#94a3b8; font-size:14px; margin-bottom:24px;">We'll send the full PDF to your inbox.</p>
+
+    <div style="margin-bottom:14px;">
+      <label style="display:block; font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px;">Your Name</label>
+      <input id="email-name" type="text" placeholder="Anton" style="width:100%; background:#090b16; border:1px solid #1a2035; border-radius:8px; color:#f0f4ff; font-size:14px; padding:11px 13px; outline:none;">
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="display:block; font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px;">Email Address</label>
+      <input id="email-addr" type="email" placeholder="you@company.com" style="width:100%; background:#090b16; border:1px solid #1a2035; border-radius:8px; color:#f0f4ff; font-size:14px; padding:11px 13px; outline:none;">
+    </div>
+    <div style="margin-bottom:20px;">
+      <label style="display:block; font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px;">Business Name (optional)</label>
+      <input id="email-biz" type="text" placeholder="Acme Co." style="width:100%; background:#090b16; border:1px solid #1a2035; border-radius:8px; color:#f0f4ff; font-size:14px; padding:11px 13px; outline:none;">
+    </div>
+
+    <div id="email-status" style="display:none; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:14px;"></div>
+
+    <div style="display:flex; gap:10px;">
+      <button onclick="sendEmail()" id="btn-send-email" style="flex:1; background:#7c3aed; color:white; border:none; border-radius:8px; padding:12px; font-size:14px; font-weight:700; cursor:pointer;">
+        Send Report
+      </button>
+      <button onclick="closeEmailModal()" style="background:transparent; color:#94a3b8; border:1px solid #1a2035; border-radius:8px; padding:12px 16px; font-size:14px; cursor:pointer;">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const JOB_ID = "{{ job_id }}";
+
+  function toggleFinding(id) {
+    document.getElementById(id).classList.toggle('open');
+  }
+  // Auto-open HIGH severity findings
+  document.querySelectorAll('.finding').forEach(el => {
+    if (el.querySelector('.sev-HIGH')) el.classList.add('open');
+  });
+
+  function openEmailModal() {
+    const m = document.getElementById('email-modal');
+    m.style.display = 'flex';
+    document.getElementById('email-status').style.display = 'none';
+    document.getElementById('btn-send-email').disabled = false;
+    document.getElementById('btn-send-email').textContent = 'Send Report';
+  }
+  function closeEmailModal() {
+    document.getElementById('email-modal').style.display = 'none';
+  }
+  document.getElementById('email-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeEmailModal();
+  });
+
+  async function sendEmail() {
+    const email = document.getElementById('email-addr').value.trim();
+    const name  = document.getElementById('email-name').value.trim();
+    const biz   = document.getElementById('email-biz').value.trim();
+    const status = document.getElementById('email-status');
+    const btn    = document.getElementById('btn-send-email');
+
+    if (!email || !email.includes('@')) {
+      showStatus('Please enter a valid email address.', 'error');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    status.style.display = 'none';
+
+    try {
+      const res  = await fetch(`/email/${JOB_ID}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, name, business_name: biz})
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showStatus(`✅ Report sent to ${email}`, 'ok');
+        btn.textContent = '✓ Sent!';
+      } else {
+        showStatus('⚠️ ' + (data.error || 'Failed to send.'), 'error');
+        btn.disabled = false;
+        btn.textContent = 'Try Again';
+      }
+    } catch (e) {
+      showStatus('⚠️ Network error — please try again.', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Try Again';
+    }
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('email-status');
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.style.background = type === 'ok' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+    el.style.color       = type === 'ok' ? '#34d399' : '#f87171';
+    el.style.border      = type === 'ok' ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)';
+  }
+</script>
+
+</body>
+</html>
