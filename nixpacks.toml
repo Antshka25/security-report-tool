@@ -1,0 +1,5 @@
+[phases.setup]
+nixPkgs = ["nmap", "python311"]
+
+[start]
+cmd = "python app.py"
