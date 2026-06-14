@@ -3,7 +3,7 @@
  * Set BACKEND_URL to your deployed Railway/Render URL.
  * For local testing: "http://localhost:5000"
  */
-const BACKEND_URL = "https://YOUR-RAILWAY-URL.up.railway.app";
+const BACKEND_URL = "https://web-production-dc0f8.up.railway.app";
 
 // ── State ──────────────────────────────────────────────────────────────────
 let currentJobId  = null;
