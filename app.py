@@ -6,12 +6,8 @@ import os
 import uuid
 import threading
 import json
-import smtplib
-import ssl as ssl_lib
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
-from email import encoders
+import base64
+import requests as http_requests
 from datetime import datetime
 from flask import (Flask, render_template, request, jsonify,
                    send_file, abort)
@@ -217,15 +213,15 @@ def health():
 
 @app.route("/email/<job_id>", methods=["POST"])
 def email_report(job_id: str):
-    """Send the PDF report to an email address."""
+    """Send the PDF report via Resend API."""
     job = _get_job(job_id)
     if not job or job.get("status") != "done":
         return jsonify({"error": "Report not ready"}), 404
 
-    data          = request.get_json(silent=True) or {}
-    to_email      = (data.get("email") or "").strip()
-    recipient_name= (data.get("name") or "").strip() or "there"
-    business_name = (data.get("business_name") or "").strip()
+    data           = request.get_json(silent=True) or {}
+    to_email       = (data.get("email") or "").strip()
+    recipient_name = (data.get("name") or "").strip() or "there"
+    business_name  = (data.get("business_name") or "").strip()
 
     if not to_email or "@" not in to_email:
         return jsonify({"error": "Valid email address required"}), 400
@@ -235,75 +231,74 @@ def email_report(job_id: str):
     if not pdf_bytes:
         return jsonify({"error": "PDF not available"}), 404
 
-    # SMTP config from environment
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_pass = os.environ.get("SMTP_PASS", "")
-    from_addr = os.environ.get("SMTP_FROM", smtp_user)
-
-    if not smtp_user or not smtp_pass:
-        return jsonify({"error": "Email not configured on this server. Set SMTP_USER and SMTP_PASS environment variables."}), 503
+    resend_api_key = os.environ.get("RESEND_API_KEY", "")
+    if not resend_api_key:
+        return jsonify({"error": "Email not configured on this server."}), 503
 
     target    = report.get("meta", {}).get("target", "your site")
     scan_date = report.get("meta", {}).get("scan_date", "")
-    risk      = report.get("risk_label", "")
+    risk      = report.get("risk_label", "UNKNOWN")
     score     = report.get("risk_score", 0)
     host_safe = target.replace(".", "-")
     pdf_name  = f"security-report-{host_safe}-{datetime.now().strftime('%Y%m%d')}.pdf"
 
-    # Build email
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Your Security Report — {target} ({risk} RISK {score}/10)"
-    msg["From"]    = from_addr
-    msg["To"]      = to_email
+    risk_color = '#ef4444' if risk in ('CRITICAL', 'HIGH') else '#f59e0b' if risk == 'MEDIUM' else '#10b981'
 
     html_body = f"""
     <html><body style="font-family:sans-serif;background:#07080f;color:#f0f4ff;padding:32px;">
     <div style="max-width:560px;margin:0 auto;">
-      <h1 style="color:#7c3aed;font-size:24px;margin-bottom:4px;">⬡ SecureCheck</h1>
-      <p style="color:#94a3b8;margin-bottom:32px;">AI Security Report</p>
+      <h1 style="color:#00E5FF;font-size:24px;margin-bottom:4px;">⚡ RapidVuln</h1>
+      <p style="color:#94a3b8;margin-bottom:32px;">Security Report</p>
       <h2 style="font-size:18px;">Hi {recipient_name},</h2>
       <p>Your security report for <strong>{target}</strong> is attached.</p>
       <div style="background:#10131f;border:1px solid #1a2035;border-radius:12px;padding:20px;margin:24px 0;">
-        <div style="font-size:48px;font-weight:900;color:{'#ef4444' if risk in ('CRITICAL','HIGH') else '#f59e0b' if risk=='MEDIUM' else '#10b981'}">
-          {score}/10
-        </div>
-        <div style="font-size:18px;font-weight:700;color:{'#ef4444' if risk in ('CRITICAL','HIGH') else '#f59e0b' if risk=='MEDIUM' else '#10b981'};margin-bottom:12px;">
-          {risk} RISK
-        </div>
+        <div style="font-size:48px;font-weight:900;color:{risk_color}">{score}/10</div>
+        <div style="font-size:18px;font-weight:700;color:{risk_color};margin-bottom:12px;">{risk} RISK</div>
         <p style="color:#94a3b8;font-size:14px;margin:0;">Scanned on {scan_date}</p>
       </div>
       <p style="color:#94a3b8;font-size:13px;">
-        The full PDF report is attached with detailed findings and step-by-step fix instructions for each issue.
+        The full PDF report is attached with detailed findings and step-by-step fix instructions.
       </p>
       <p style="color:#4a5568;font-size:11px;margin-top:32px;border-top:1px solid #1a2035;padding-top:16px;">
-        This report is for informational purposes only. SecureCheck automated scans are not a substitute for a professional security assessment.
+        This report is for informational purposes only. RapidVuln automated scans are not a substitute for a professional security assessment.
       </p>
     </div>
     </body></html>
     """
 
-    msg.attach(MIMEText(html_body, "html"))
+    # Encode PDF as base64 for Resend attachment
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
-    # Attach PDF
-    pdf_part = MIMEBase("application", "pdf")
-    pdf_part.set_payload(pdf_bytes)
-    encoders.encode_base64(pdf_part)
-    pdf_part.add_header("Content-Disposition", f'attachment; filename="{pdf_name}"')
-    msg.attach(pdf_part)
+    payload = {
+        "from": "RapidVuln <reports@rapidvuln.com>",
+        "to": [to_email],
+        "subject": f"Your Security Report — {target} ({risk} RISK {score}/10)",
+        "html": html_body,
+        "attachments": [
+            {
+                "filename": pdf_name,
+                "content": pdf_b64,
+            }
+        ],
+    }
 
     try:
-        ctx = ssl_lib.create_default_context()
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-            server.ehlo()
-            server.starttls(context=ctx)
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(from_addr, to_email, msg.as_string())
-        app.logger.info(f"Report emailed to {to_email} for job {job_id}")
-        return jsonify({"ok": True, "message": f"Report sent to {to_email}"})
-    except smtplib.SMTPAuthenticationError:
-        return jsonify({"error": "Email authentication failed. Check SMTP_USER and SMTP_PASS."}), 500
+        resp = http_requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            app.logger.info(f"Report emailed to {to_email} for job {job_id}")
+            return jsonify({"ok": True, "message": f"Report sent to {to_email}"})
+        else:
+            err = resp.json().get("message", resp.text)
+            app.logger.error(f"Resend error: {err}")
+            return jsonify({"error": f"Failed to send email: {err}"}), 500
     except Exception as e:
         app.logger.error(f"Email send failed: {e}")
         return jsonify({"error": f"Failed to send email: {str(e)}"}), 500
