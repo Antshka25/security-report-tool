@@ -18,6 +18,7 @@ from ai_reporter import generate_report, generate_report_fallback
 from pdf_generator import build_pdf
 from web_checks import run_web_checks
 from vuln_checks import run_vuln_checks
+from cve_checks import run_cve_checks
 import db
 
 try:
@@ -120,6 +121,13 @@ def _run_job(job_id: str, host: str, target_display: str,
             web_findings.extend(run_vuln_checks(host))
         except Exception as vuln_err:
             app.logger.warning(f"Vuln checks failed ({vuln_err}), continuing without them")
+
+        # Step 2d: Known-CVE lookup for detected software versions
+        _set_job(job_id, {"step": "Checking for known vulnerabilities (CVEs)…", "progress": 51})
+        try:
+            web_findings.extend(run_cve_checks(host))
+        except Exception as cve_err:
+            app.logger.warning(f"CVE checks failed ({cve_err}), continuing without them")
 
         # Step 3: Build summary (merge nmap + web findings)
         _set_job(job_id, {"step": "Analysing all findings…", "progress": 55})
