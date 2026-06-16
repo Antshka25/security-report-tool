@@ -22,6 +22,12 @@ try:
 except ImportError:
     HAS_DNS = False
 
+try:
+    import whois as _whois
+    HAS_WHOIS = True
+except ImportError:
+    HAS_WHOIS = False
+
 RISK_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "INFO": 3}
 
 
@@ -40,6 +46,10 @@ def run_web_checks(host: str) -> list[dict]:
     if not _is_ip(host):
         try:
             findings.extend(_check_dns(host))
+        except Exception:
+            pass
+        try:
+            findings.extend(_check_domain_expiration(host))
         except Exception:
             pass
     findings.sort(key=lambda f: RISK_ORDER.get(f.get("risk", "INFO"), 99))
@@ -613,7 +623,8 @@ def _check_dns_dnspython(host: str) -> list[dict]:
 
     # DKIM
     dkim_found = False
-    for selector in ("default", "google", "mail", "dkim", "k1", "selector1", "selector2"):
+    for selector in ("default", "google", "mail", "dkim", "k1", "selector1", "selector2",
+                      "resend", "s1", "s2", "zoho", "mandrill"):
         try:
             _dns_resolver.resolve(f"{selector}._domainkey.{host}", "TXT", lifetime=4)
             dkim_found = True
@@ -686,6 +697,92 @@ def _check_dns_nslookup(host: str) -> list[dict]:
                 "Add a TXT record for '_dmarc' with value: 'v=DMARC1; p=quarantine; rua=mailto:you@yourdomain.com' "
                 "Verify at https://mxtoolbox.com/dmarc.aspx"
             )
+        ))
+
+    return findings
+
+
+# ── WHOIS / Domain Registration Expiration ────────────────────────────────────
+
+def _check_domain_expiration(host: str) -> list[dict]:
+    if not HAS_WHOIS:
+        return []
+
+    findings = []
+    try:
+        w = _whois.whois(host, timeout=10)
+    except Exception:
+        return findings
+
+    expires = w.get("expiration_date") if isinstance(w, dict) else getattr(w, "expiration_date", None)
+    if isinstance(expires, list):
+        expires = expires[0] if expires else None
+    if not isinstance(expires, datetime):
+        return findings
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+
+    days_left = (expires - datetime.now(timezone.utc)).days
+    registrar = w.get("registrar") if isinstance(w, dict) else getattr(w, "registrar", None)
+    registrar_note = f" (registrar: {registrar})" if registrar else ""
+
+    if days_left < 0:
+        findings.append(_finding(
+            "WHOIS", "Domain Registration", "HIGH",
+            f"Domain registration expired {abs(days_left)} days ago{registrar_note} — it can be suspended or released to the public at any time",
+            "Domain Registration Expired",
+            category="dns",
+            business_risk=(
+                "Once a domain lapses, the website and every @yourdomain.com email address can go down without "
+                "warning, and after a short grace period anyone — including squatters or competitors — can "
+                "register it out from under you."
+            ),
+            how_to_fix=(
+                "Log into your domain registrar (GoDaddy, Namecheap, Google Domains, etc.) and renew the domain "
+                "immediately, before it enters redemption/auction status, which can cost far more to recover."
+            )
+        ))
+    elif days_left < 30:
+        findings.append(_finding(
+            "WHOIS", "Domain Registration", "HIGH",
+            f"Domain registration expires in {days_left} days{registrar_note} — losing it would take down the website and all email",
+            f"Domain Expiring in {days_left} Days — Urgent",
+            category="dns",
+            business_risk=(
+                "If this renewal is missed, the website goes offline and every email address on this domain "
+                "stops working — including invoices, password resets, and customer replies — until it's "
+                "renewed or, worst case, recovered from whoever registers it after it lapses."
+            ),
+            how_to_fix=(
+                f"Renew the domain now at your registrar — {days_left} days left. Turn on auto-renew and confirm "
+                "the card on file and contact email are current so this never happens silently again."
+            )
+        ))
+    elif days_left < 60:
+        findings.append(_finding(
+            "WHOIS", "Domain Registration", "MEDIUM",
+            f"Domain registration expires in {days_left} days{registrar_note}",
+            f"Domain Renewal Due in {days_left} Days",
+            category="dns",
+            business_risk=(
+                "Not urgent yet, but a missed renewal takes the site and all email on this domain offline — "
+                "worth confirming auto-renew is on now rather than relying on remembering later."
+            ),
+            how_to_fix="Confirm auto-renew is enabled at your registrar, or renew manually in the next few weeks.",
+            urgency="Monitor"
+        ))
+    elif days_left < 120:
+        findings.append(_finding(
+            "WHOIS", "Domain Registration", "LOW",
+            f"Domain registration expires in {days_left} days{registrar_note}",
+            f"Domain Renewal Due in {days_left} Days",
+            category="dns",
+            business_risk=(
+                "Plenty of runway, but this is the kind of date that's easy to forget — a calendar reminder or "
+                "auto-renew now avoids any risk of losing the domain later."
+            ),
+            how_to_fix="Turn on auto-renew at your registrar, or add a calendar reminder for the renewal date.",
+            urgency="Monitor"
         ))
 
     return findings
