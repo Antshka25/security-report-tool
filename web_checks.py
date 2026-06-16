@@ -57,7 +57,7 @@ def _is_ip(host: str) -> bool:
 
 
 def _finding(port, service, risk, reason, title="", version="",
-             category="web", how_to_fix="", urgency=""):
+             category="web", how_to_fix="", urgency="", business_risk=""):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -66,6 +66,11 @@ def _finding(port, service, risk, reason, title="", version="",
         "version":    version,
         "risk":       risk,
         "reason":     reason,
+        "what_it_is": reason,
+        # Always a distinct, consequence-focused sentence — never just a
+        # repeat of "reason". Falls back to "reason" only if a call site
+        # genuinely forgot to provide one, so nothing ever ends up blank.
+        "business_risk": business_risk or reason,
         "dangerous":  risk in ("HIGH", "MEDIUM"),
         "title":      title or f"{service} Issue",
         "category":   category,
@@ -98,6 +103,11 @@ def _check_ssl(host: str) -> list[dict]:
             "443", "HTTPS", "MEDIUM",
             "No HTTPS detected on port 443 — web traffic is sent in plain text, visible to anyone on the network",
             "No HTTPS / SSL Not Available",
+            business_risk=(
+                "Customer passwords, contact details, and any form submissions can be read by anyone on the "
+                "same network (public wifi, ISPs, etc.), and modern browsers will actively warn visitors that "
+                "your site is 'Not Secure' — which drives people away and can hurt your search rankings."
+            ),
             how_to_fix=(
                 "Install an SSL certificate to enable HTTPS. "
                 "If you use a web host (GoDaddy, Bluehost, Cloudflare, etc.), go to their control panel and enable 'Free SSL' or 'Let's Encrypt'. "
@@ -120,6 +130,11 @@ def _check_ssl(host: str) -> list[dict]:
                 "SSL", "SSL Certificate", "HIGH",
                 "Self-signed SSL certificate — browsers show a 'Your connection is not private' warning to every visitor",
                 "Self-Signed SSL Certificate",
+                business_risk=(
+                    "Most visitors will leave the instant they see that warning, assuming the site is unsafe or "
+                    "compromised — costing you sales and leads, especially on any page where customers enter "
+                    "personal or payment information."
+                ),
                 how_to_fix=(
                     "Replace the self-signed cert with a trusted one. "
                     "Use Let's Encrypt (free): run 'sudo certbot --nginx -d yourdomain.com' on your server. "
@@ -132,6 +147,11 @@ def _check_ssl(host: str) -> list[dict]:
                 "SSL", "SSL Certificate", "HIGH",
                 "SSL certificate is expired — every visitor sees a browser security warning and many will leave immediately",
                 "Expired SSL Certificate",
+                business_risk=(
+                    "Every visitor right now is seeing a security warning, which most people read as a sign the "
+                    "business is unsafe, broken, or even hacked — that's lost sales and damaged trust building up "
+                    "for as long as it stays unfixed."
+                ),
                 how_to_fix=(
                     "Renew your SSL certificate immediately. "
                     "If using Let's Encrypt: run 'sudo certbot renew' on your server. "
@@ -144,6 +164,10 @@ def _check_ssl(host: str) -> list[dict]:
                 "SSL", "SSL Certificate", "HIGH",
                 "SSL certificate is for a different domain — visitors get a browser warning saying the site can't be trusted",
                 "SSL Certificate Hostname Mismatch",
+                business_risk=(
+                    "This warning makes your business look unprofessional or compromised, and many visitors "
+                    "won't proceed past it — particularly damaging on login or checkout pages where trust matters most."
+                ),
                 how_to_fix=(
                     "Get an SSL certificate that matches this exact domain name. "
                     "Check: the cert may be for 'www.yourdomain.com' but you're visiting 'yourdomain.com' (or vice versa). "
@@ -156,6 +180,10 @@ def _check_ssl(host: str) -> list[dict]:
                 "SSL", "SSL Certificate", "HIGH",
                 f"SSL certificate error ({str(e)[:100]}) — visitors may see browser security warnings",
                 "SSL Certificate Error",
+                business_risk=(
+                    "Unresolved certificate problems quietly erode customer trust and can drive away traffic "
+                    "before you even notice a dip in sales or inquiries."
+                ),
                 how_to_fix="Contact your hosting provider or IT team to inspect and replace the SSL certificate. Test at https://www.ssllabs.com/ssltest/"
             ))
     except Exception:
@@ -172,6 +200,11 @@ def _check_ssl(host: str) -> list[dict]:
                     "SSL", "SSL Certificate", "HIGH",
                     f"SSL certificate expired {abs(days_left)} days ago — visitors see browser security warnings right now",
                     "SSL Certificate Expired",
+                    business_risk=(
+                        "Right now, every single visitor sees a 'Not Secure' or 'connection not private' warning — "
+                        "many will assume the site is broken or unsafe and leave, which means lost business every "
+                        "day this stays unfixed."
+                    ),
                     how_to_fix="Run 'sudo certbot renew' immediately if using Let's Encrypt. Otherwise log into your hosting panel and renew the SSL certificate today."
                 ))
             elif days_left < 14:
@@ -179,6 +212,11 @@ def _check_ssl(host: str) -> list[dict]:
                     "SSL", "SSL Certificate", "HIGH",
                     f"SSL certificate expires in {days_left} days — website will show security errors very soon",
                     f"SSL Expiring in {days_left} Days — Urgent",
+                    business_risk=(
+                        "Once this certificate expires, every visitor will hit a security warning and many will "
+                        "leave instead of buying or contacting you — handling the renewal now avoids a sudden, "
+                        "preventable drop in traffic and trust."
+                    ),
                     how_to_fix=f"Renew immediately. Let's Encrypt: run 'sudo certbot renew'. Hosting panel: find 'SSL/TLS' settings and click Renew. You have {days_left} days before visitors start seeing warnings."
                 ))
             elif days_left < 30:
@@ -186,6 +224,10 @@ def _check_ssl(host: str) -> list[dict]:
                     "SSL", "SSL Certificate", "MEDIUM",
                     f"SSL certificate expires in {days_left} days — schedule renewal now",
                     f"SSL Expiring Soon ({days_left} Days)",
+                    business_risk=(
+                        "Not urgent today, but if this lapses without warning, visitors will suddenly start seeing "
+                        "security errors and conversions can drop overnight — renewing now avoids any disruption."
+                    ),
                     how_to_fix="Renew your SSL certificate this week. Let's Encrypt: 'sudo certbot renew'. For auto-renewal: 'sudo crontab -e' and add '0 12 * * * certbot renew --quiet'"
                 ))
             elif days_left < 90:
@@ -193,6 +235,10 @@ def _check_ssl(host: str) -> list[dict]:
                     "SSL", "SSL Certificate", "LOW",
                     f"SSL certificate expires in {days_left} days",
                     f"SSL Renewal Due in {days_left} Days",
+                    business_risk=(
+                        "Plenty of runway here, but a forgotten renewal later means visitors will eventually hit "
+                        "security warnings out of nowhere — worth a calendar reminder so it never becomes urgent."
+                    ),
                     how_to_fix="Add a calendar reminder to renew in 60 days. Or set up auto-renewal: 'sudo systemctl enable certbot.timer' (Let's Encrypt).",
                     urgency="Monitor"
                 ))
@@ -214,6 +260,11 @@ def _check_ssl(host: str) -> list[dict]:
                         "SSL", "TLS Version", "MEDIUM",
                         f"Server accepts {ver} which is deprecated and insecure since 2020",
                         f"Outdated TLS Version Accepted ({ver})",
+                        business_risk=(
+                            "Security scanners and compliance audits (PCI-DSS, SOC 2, cyber-insurance "
+                            "questionnaires, etc.) flag outdated TLS versions as a failing item, and major "
+                            "browsers are gradually moving toward blocking these connections entirely."
+                        ),
                         how_to_fix=(
                             "Disable TLS 1.0 and 1.1 in your web server config. "
                             "For Nginx: add 'ssl_protocols TLSv1.2 TLSv1.3;' to your server block. "
@@ -246,6 +297,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "HTTP", "HTTPS Redirect", "MEDIUM",
                 "Visiting http:// doesn't redirect to https:// — some visitors may use an unencrypted connection without knowing",
                 "HTTP Not Redirecting to HTTPS",
+                business_risk=(
+                    "Anyone who types or clicks an http:// link is sending their activity on your site — "
+                    "potentially including form data or passwords — unencrypted, where it can be read by "
+                    "anyone on the same public wifi or compromised network."
+                ),
                 how_to_fix=(
                     "Add a permanent redirect from HTTP to HTTPS. "
                     "Nginx: add 'return 301 https://$host$request_uri;' in your port 80 server block. "
@@ -275,6 +331,11 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "HSTS Header", "MEDIUM",
             "Missing Strict-Transport-Security (HSTS) — browsers aren't forced to always use HTTPS, leaving visitors open to downgrade attacks",
             "Missing HSTS Header",
+            business_risk=(
+                "An attacker on the same network as a visitor (public wifi, a compromised router, etc.) can "
+                "trick their browser into using the insecure version of your site and intercept what they type — "
+                "raising the odds of stolen logins or payment details."
+            ),
             how_to_fix=(
                 "Add the HSTS header to your web server. "
                 "Nginx: add 'add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;' in your server block. "
@@ -290,6 +351,11 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "Clickjacking Protection", "MEDIUM",
             "Missing X-Frame-Options — your website can be embedded in an attacker's invisible iframe to trick users into unwanted actions",
             "Missing Clickjacking Protection (X-Frame-Options)",
+            business_risk=(
+                "An attacker could trick your customers into clicking hidden buttons — like 'change password' or "
+                "'confirm purchase' — without realizing it, potentially leading to account takeovers or "
+                "unauthorized actions carried out under your brand's name."
+            ),
             how_to_fix=(
                 "Add the X-Frame-Options header. "
                 "Nginx: 'add_header X-Frame-Options \"SAMEORIGIN\" always;' "
@@ -304,6 +370,10 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "MIME Sniffing", "LOW",
             "Missing X-Content-Type-Options — browsers may guess file types incorrectly, which can enable content injection",
             "Missing MIME Sniffing Protection",
+            business_risk=(
+                "This is a minor gap on its own, but it slightly raises the odds that a malicious file could be "
+                "misread as something else by a visitor's browser, helping a separate attack succeed."
+            ),
             how_to_fix=(
                 "Add: 'add_header X-Content-Type-Options \"nosniff\" always;' (Nginx) "
                 "or 'Header always set X-Content-Type-Options nosniff' (Apache). "
@@ -317,6 +387,11 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "Content Security Policy", "MEDIUM",
             "Missing Content-Security-Policy (CSP) — no browser protection against cross-site scripting attacks that steal customer data",
             "Missing Content-Security-Policy (CSP)",
+            business_risk=(
+                "If an attacker ever manages to slip malicious script onto your site (e.g. through a vulnerable "
+                "plugin or a comment field), there's nothing in place to stop it from running and stealing "
+                "customer data such as login sessions or payment details."
+            ),
             how_to_fix=(
                 "Add a Content-Security-Policy header. Start with a basic policy: "
                 "'add_header Content-Security-Policy \"default-src \\'self\\'; script-src \\'self\\'; object-src \\'none\\'\";' "
@@ -331,6 +406,11 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "Referrer Policy", "LOW",
             "Missing Referrer-Policy — page URLs (which may include sensitive data) are shared with third-party sites your pages link to",
             "Missing Referrer-Policy Header",
+            business_risk=(
+                "If any of your page addresses contain sensitive details (like a password-reset token or account "
+                "ID), that information could leak to outside sites your pages link to — a small but easily "
+                "avoidable privacy gap."
+            ),
             how_to_fix=(
                 "Add: 'add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;' (Nginx) "
                 "or 'Header always set Referrer-Policy strict-origin-when-cross-origin' (Apache)."
@@ -343,6 +423,11 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "Permissions Policy", "LOW",
             "Missing Permissions-Policy — browser features like camera, microphone, and location aren't restricted for embedded third-party scripts",
             "Missing Permissions-Policy Header",
+            business_risk=(
+                "If you ever embed third-party ads, widgets, or analytics scripts, they could request a "
+                "visitor's camera, microphone, or location without you intending to allow it — an avoidable "
+                "privacy risk for your customers."
+            ),
             how_to_fix=(
                 "Add: 'add_header Permissions-Policy \"camera=(), microphone=(), geolocation=()\" always;' "
                 "Adjust based on what your site actually uses. This limits what ad/analytics scripts can access."
@@ -359,6 +444,10 @@ def _check_http_headers(host: str) -> list[dict]:
             f"Server header reveals exact software version ({server}) — attackers search vulnerability databases for that version",
             "Server Software Version Exposed",
             version=server,
+            business_risk=(
+                "Attackers use that exact version number to look up known, public vulnerabilities for that "
+                "specific software release — making it easier to plan a targeted attack instead of guessing blind."
+            ),
             how_to_fix=(
                 f"Hide the server version. "
                 "Nginx: set 'server_tokens off;' in nginx.conf. "
@@ -375,6 +464,11 @@ def _check_http_headers(host: str) -> list[dict]:
             f"X-Powered-By header discloses your tech stack ({powered_by}) — makes targeted attacks easier",
             "Technology Stack Disclosed (X-Powered-By)",
             version=powered_by,
+            business_risk=(
+                "Knowing your exact tech stack lets an attacker focus their effort on vulnerabilities specific to "
+                "that platform, slightly increasing the odds of being targeted compared to a generic, "
+                "unidentified site."
+            ),
             how_to_fix=(
                 "Remove the X-Powered-By header. "
                 "PHP: set 'expose_php = Off' in php.ini. "
@@ -414,6 +508,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                         "SPF record uses '+all' — anyone on the internet can send emails as your domain, the record does nothing",
                         "SPF Record Too Permissive (+all)",
                         category="dns",
+                        business_risk=(
+                            "Scammers can send phishing or fraud emails that look exactly like they came from "
+                            "your business, and recipients have no way to tell them apart from the real thing — "
+                            "putting your customers and your reputation at risk."
+                        ),
                         how_to_fix=(
                             "Change '+all' to '-all' (hard fail) in your SPF record in your DNS settings. "
                             "Log into your domain registrar (GoDaddy, Namecheap, etc.), go to DNS settings, "
@@ -427,6 +526,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                         "SPF record uses '?all' (neutral) — spoofed emails aren't blocked or flagged",
                         "SPF Record Neutral — Not Enforced",
                         category="dns",
+                        business_risk=(
+                            "Phishing emails impersonating your business can land in customers' inboxes without "
+                            "any warning label, raising the chance someone falls for a scam and blames your "
+                            "company for it."
+                        ),
                         how_to_fix="Change '?all' to '~all' (soft fail) or '-all' (hard fail) in your DNS TXT record. Use '-all' for strongest protection."
                     ))
                 break
@@ -439,6 +543,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
             "No SPF record — anyone can send emails pretending to be from your domain, used for phishing scams targeting your customers",
             "Missing SPF Record — Email Spoofing Possible",
             category="dns",
+            business_risk=(
+                "Without SPF, scammers can convincingly impersonate your business by email — which can lead to "
+                "customers being defrauded, your domain's email reputation being damaged, and your own real "
+                "emails landing in spam as a result."
+            ),
             how_to_fix=(
                 "Add an SPF TXT record to your DNS. Log into your domain registrar, go to DNS, "
                 "add a new TXT record for '@' with value: 'v=spf1 include:_spf.google.com -all' "
@@ -466,6 +575,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                         "DMARC is set to monitor-only (p=none) — phishing emails pretending to be you aren't blocked, just reported",
                         "DMARC Monitor-Only (p=none) — Not Enforced",
                         category="dns",
+                        business_risk=(
+                            "Phishing emails pretending to be your business can still reach customers' inboxes "
+                            "today — you'll get reports about it after the fact, but nothing actually stops the "
+                            "fraudulent emails from being delivered right now."
+                        ),
                         how_to_fix=(
                             "Upgrade DMARC from p=none to p=quarantine or p=reject. "
                             "In your DNS, update the _dmarc TXT record: change 'p=none' to 'p=quarantine' first (sends suspicious mail to spam). "
@@ -483,6 +597,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
             "No DMARC record — your domain has zero email authentication enforcement, making it trivial to impersonate your business",
             "Missing DMARC Record — Email Impersonation Risk",
             category="dns",
+            business_risk=(
+                "This makes it significantly easier for scammers to send convincing fake emails 'from' your "
+                "business — a common tactic in invoice fraud and phishing — which can directly cost your "
+                "customers money and damage trust in your brand."
+            ),
             how_to_fix=(
                 "Add a DMARC TXT record to your DNS. Go to your domain registrar's DNS settings, "
                 "add a TXT record for '_dmarc' (not '@') with value: "
@@ -508,6 +627,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
             "No DKIM signature detected — outgoing emails aren't cryptographically signed, making spoofing and tampering easier",
             "DKIM Not Detected",
             category="dns",
+            business_risk=(
+                "Email providers increasingly use DKIM as a trust signal — without it, your legitimate emails "
+                "are more likely to be flagged as suspicious or land in spam, hurting delivery of invoices, "
+                "marketing, and everyday customer communications."
+            ),
             how_to_fix=(
                 "Enable DKIM signing through your email provider. "
                 "Google Workspace: Admin console > Apps > Gmail > Authenticate email > Generate DKIM key, then add the TXT record to DNS. "
@@ -538,6 +662,10 @@ def _check_dns_nslookup(host: str) -> list[dict]:
             "No SPF record — anyone can send emails pretending to be from your domain",
             "Missing SPF Record — Email Spoofing Possible",
             category="dns",
+            business_risk=(
+                "Scammers can use this gap to send convincing fake emails that appear to come from your "
+                "business, putting your customers at risk and potentially damaging your reputation."
+            ),
             how_to_fix=(
                 "Add a TXT record to your DNS for '@' with value: 'v=spf1 include:_spf.google.com -all' "
                 "(adjust for your email provider). Verify at https://mxtoolbox.com/spf.aspx"
@@ -550,6 +678,10 @@ def _check_dns_nslookup(host: str) -> list[dict]:
             "No DMARC record — attackers can impersonate your business in emails",
             "Missing DMARC Record — Email Impersonation Risk",
             category="dns",
+            business_risk=(
+                "This makes email scams impersonating your business easier to pull off, which can cost "
+                "customers money and erode trust in your brand."
+            ),
             how_to_fix=(
                 "Add a TXT record for '_dmarc' with value: 'v=DMARC1; p=quarantine; rua=mailto:you@yourdomain.com' "
                 "Verify at https://mxtoolbox.com/dmarc.aspx"
