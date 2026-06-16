@@ -104,10 +104,12 @@ def _check_ssl(host: str) -> list[dict]:
     ctx_strict = ssl.create_default_context()
 
     cert = None
+    cipher_info = None
     try:
         with socket.create_connection((host, 443), timeout=8) as sock:
             with ctx_noverify.wrap_socket(sock, server_hostname=host) as ssock:
                 cert = ssock.getpeercert()
+                cipher_info = ssock.cipher()
     except (ConnectionRefusedError, OSError):
         findings.append(_finding(
             "443", "HTTPS", "MEDIUM",
@@ -287,6 +289,32 @@ def _check_ssl(host: str) -> list[dict]:
     except Exception:
         pass
 
+    # Weak cipher check — flags whatever cipher the server actually
+    # negotiated by default (no forced downgrade), so this only fires
+    # when the server itself is willing to use a weak suite.
+    if cipher_info:
+        cipher_name = cipher_info[0]
+        secret_bits = cipher_info[2] if len(cipher_info) > 2 else 256
+        weak_markers = ("RC4", "DES", "MD5", "NULL", "EXPORT", "ANON")
+        if any(m in cipher_name.upper() for m in weak_markers) or secret_bits < 112:
+            findings.append(_finding(
+                "SSL", "Cipher Suite", "MEDIUM",
+                f"Server negotiated a weak cipher suite ({cipher_name}, {secret_bits}-bit) — traffic encrypted "
+                f"this way has a realistic chance of being decrypted by an attacker who intercepts it",
+                "Weak SSL/TLS Cipher Suite In Use",
+                business_risk=(
+                    "An attacker who intercepts network traffic (public wifi, a compromised router, etc.) has a "
+                    "real chance of decrypting it with this cipher, exposing whatever customers type — logins, "
+                    "payment details, personal information."
+                ),
+                how_to_fix=(
+                    "Disable weak ciphers and only allow modern, strong cipher suites. "
+                    "Nginx: set 'ssl_ciphers HIGH:!aNULL:!MD5:!RC4:!3DES;' and 'ssl_protocols TLSv1.2 TLSv1.3;' in your server block. "
+                    "Apache: set 'SSLCipherSuite HIGH:!aNULL:!MD5:!RC4:!3DES' in ssl.conf. "
+                    "Then restart the server and verify at https://www.ssllabs.com/ssltest/"
+                )
+            ))
+
     return findings
 
 
@@ -324,10 +352,12 @@ def _check_http_headers(host: str) -> list[dict]:
 
     # Fetch headers
     headers = {}
+    resp = None
     for scheme in ("https", "http"):
         try:
             r = httpx.get(f"{scheme}://{host}", timeout=8, follow_redirects=True, verify=False)
             headers = {k.lower(): v for k, v in r.headers.items()}
+            resp = r
             break
         except Exception:
             continue
@@ -486,6 +516,43 @@ def _check_http_headers(host: str) -> list[dict]:
                 "Nginx: 'more_clear_headers X-Powered-By;' (with headers_more module) or handle in your app."
             )
         ))
+
+    # Cookie security flags — inspect each Set-Cookie line individually
+    # since a flattened header dict would silently drop all but the last one.
+    if resp is not None:
+        try:
+            set_cookie_headers = resp.headers.get_list("set-cookie")
+        except Exception:
+            set_cookie_headers = []
+        for cookie_str in set_cookie_headers:
+            cookie_name = cookie_str.split("=", 1)[0].strip()
+            lower = cookie_str.lower()
+            missing = []
+            if "secure" not in lower:
+                missing.append("Secure")
+            if "httponly" not in lower:
+                missing.append("HttpOnly")
+            if "samesite" not in lower:
+                missing.append("SameSite")
+            if missing:
+                risk = "MEDIUM" if ("Secure" in missing or "HttpOnly" in missing) else "LOW"
+                findings.append(_finding(
+                    "HTTPS", "Cookie Security", risk,
+                    f"Cookie '{cookie_name}' is missing the {', '.join(missing)} flag(s), making it easier to steal or misuse",
+                    f"Insecure Cookie Flags ({cookie_name})",
+                    business_risk=(
+                        "Without these flags, a cookie is easier to steal through cross-site scripting or to "
+                        "intercept over an unencrypted connection — and a stolen session cookie can let an "
+                        "attacker impersonate that logged-in user without ever needing their password."
+                    ),
+                    how_to_fix=(
+                        f"Add the missing flag(s) when setting this cookie: Secure (only send over HTTPS), "
+                        f"HttpOnly (block JavaScript access), SameSite=Lax or Strict (limit cross-site sending). "
+                        f"Most frameworks expose this as a one-line config option — e.g. Flask: "
+                        f"app.config['SESSION_COOKIE_SECURE']=True, SESSION_COOKIE_HTTPONLY=True, "
+                        f"SESSION_COOKIE_SAMESITE='Lax'."
+                    )
+                ))
 
     return findings
 
