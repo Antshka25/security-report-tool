@@ -17,6 +17,7 @@ from scanner import resolve_target, validate_target, run_scan, build_scan_summar
 from ai_reporter import generate_report, generate_report_fallback
 from pdf_generator import build_pdf
 from web_checks import run_web_checks
+from vuln_checks import run_vuln_checks
 import db
 
 try:
@@ -113,6 +114,13 @@ def _run_job(job_id: str, host: str, target_display: str,
         except Exception as web_err:
             app.logger.warning(f"Web checks failed ({web_err}), continuing without them")
 
+        # Step 2c: Active vulnerability checks (SQLi, XSS, command injection)
+        _set_job(job_id, {"step": "Testing for injection vulnerabilities…", "progress": 48})
+        try:
+            web_findings.extend(run_vuln_checks(host))
+        except Exception as vuln_err:
+            app.logger.warning(f"Vuln checks failed ({vuln_err}), continuing without them")
+
         # Step 3: Build summary (merge nmap + web findings)
         _set_job(job_id, {"step": "Analysing all findings…", "progress": 55})
         summary = build_scan_summary(scan, extra_findings=web_findings)
@@ -160,6 +168,9 @@ def start_scan():
 
     if not target:
         return jsonify({"error": "Please enter a URL or IP address"}), 400
+
+    if not data.get("authorized"):
+        return jsonify({"error": "You must confirm you own or are authorized to scan this site"}), 400
 
     # Resolve the target
     resolved = resolve_target(target)

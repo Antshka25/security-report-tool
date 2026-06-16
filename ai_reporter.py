@@ -252,8 +252,8 @@ def generate_report_fallback(summary: dict, business_name: str = "",
         what_it_is   = p.get("what_it_is", "")
         biz_risk     = p.get("business_risk", p.get("reason", ""))
 
-        if cat in ("web", "dns"):
-            # web_checks findings already have rich data
+        if cat in ("web", "dns", "vuln"):
+            # web_checks / vuln_checks findings already have rich data
             title    = p.get("title", f"{svc} Issue")
             fix      = existing_fix or _DEFAULT_FIX
             what     = what_it_is or p.get("reason", "")

@@ -240,6 +240,23 @@
       gap: 0.4rem;
     }
 
+    .scan-authorize {
+      margin-top: 0.7rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .scan-authorize input[type="checkbox"] {
+      margin-top: 0.15rem;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .scan-authorize label { cursor: pointer; }
+
     /* ── SCAN ANIMATION ── */
     .scan-progress {
       display: none;
@@ -756,6 +773,10 @@
     <div class="input-row">
       <input class="url-input" id="scan-input" type="text" placeholder="yourbusiness.com" autocomplete="off"/>
       <button class="scan-btn" id="scan-btn" onclick="startScan()">Scan Now →</button>
+    </div>
+    <div class="scan-authorize">
+      <input type="checkbox" id="scan-authorize-checkbox"/>
+      <label for="scan-authorize-checkbox">I own this website or am authorized to scan it.</label>
     </div>
     <p class="scan-note">🔒 Your first scan is completely free. No credit card required.</p>
 

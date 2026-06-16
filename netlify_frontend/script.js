@@ -51,6 +51,10 @@ function getEmailBtn() {
          Array.from($all("button")).find(b => /email/i.test(b.textContent));
 }
 
+function getAuthorizeCheckbox() {
+  return $id("scan-authorize-checkbox") || $sel('input[type="checkbox"]');
+}
+
 // ── Wire scan form ─────────────────────────────────────────────────────────
 function wireUpScanForm() {
   const input  = getScanInput();
@@ -73,6 +77,12 @@ async function startScan() {
     return;
   }
 
+  const authCheckbox = getAuthorizeCheckbox();
+  if (authCheckbox && !authCheckbox.checked) {
+    showInlineError("Please confirm you own or are authorized to scan this site");
+    return;
+  }
+
   currentTarget = target;
   showScanningUI(target);
 
@@ -80,7 +90,7 @@ async function startScan() {
     const res  = await fetch(`${BACKEND_URL}/scan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target, scan_type: "standard" })
+      body: JSON.stringify({ target, scan_type: "standard", authorized: true })
     });
     const data = await res.json();
 
