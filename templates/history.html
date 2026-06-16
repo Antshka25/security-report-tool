@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scan History — RapidVuln</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:     #07080f;
+      --panel:  #0c0e1a;
+      --card:   #10131f;
+      --border: #1a2035;
+      --accent: #7c3aed;
+      --white:  #f0f4ff;
+      --muted:  #94a3b8;
+      --dim:    #4a5568;
+      --high:   #ef4444;
+      --medium: #f59e0b;
+      --low:    #10b981;
+    }
+    body { background: var(--bg); color: var(--white); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 40px; border-bottom: 1px solid var(--border); background: rgba(7,8,15,0.95); position: sticky; top: 0; z-index: 10; }
+    .logo { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; color: var(--white); }
+    .logo span { color: var(--accent); }
+    .btn { padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; border: none; }
+    .btn-secondary { background: transparent; color: var(--white); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); text-decoration: none; }
+
+    .page { max-width: 1000px; margin: 0 auto; padding: 40px 20px 80px; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+
+    .filter-form { display: flex; gap: 10px; margin-bottom: 24px; }
+    .filter-form input {
+      flex: 1; max-width: 320px; background: #090b16; border: 1px solid var(--border); border-radius: 8px;
+      color: var(--white); font-size: 14px; padding: 10px 14px; outline: none;
+    }
+    .filter-form input:focus { border-color: var(--accent); }
+    .filter-form button {
+      background: var(--accent); color: white; border: none; border-radius: 8px;
+      padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    .filter-form button:hover { background: #6d28d9; }
+    .clear-link { font-size: 13px; color: var(--muted); align-self: center; }
+
+    table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    th, td { padding: 12px 16px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; background: var(--panel); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .risk-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; }
+    .sev-CRITICAL, .sev-HIGH { background: rgba(239,68,68,0.15); color: #f87171; }
+    .sev-MEDIUM { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .sev-LOW    { background: rgba(16,185,129,0.15); color: #34d399; }
+
+    .paid-yes { color: var(--low); font-weight: 700; }
+    .paid-no  { color: var(--dim); }
+
+    .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo"><span>⬡</span> RapidVuln</div>
+  <a href="/" class="btn btn-secondary">New Scan</a>
+</nav>
+
+<div class="page">
+  <h1>Scan History</h1>
+  <div class="sub">
+    {% if host %}Showing past scans for <strong>{{ host }}</strong>{% else %}All completed scans, most recent first{% endif %}
+  </div>
+
+  <form class="filter-form" method="get" action="/history">
+    <input type="text" name="host" placeholder="Filter by domain (e.g. example.com)" value="{{ host or '' }}">
+    <button type="submit">Filter</button>
+    {% if host %}<a class="clear-link" href="/history">Clear filter</a>{% endif %}
+  </form>
+
+  {% if scans %}
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Target</th>
+        <th>Business</th>
+        <th>Score</th>
+        <th>Risk</th>
+        <th>High / Med / Low</th>
+        <th>Paid</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in scans %}
+      <tr>
+        <td>{{ s.finished_at[:10] if s.finished_at else '—' }}</td>
+        <td>{{ s.target or s.host }}</td>
+        <td>{{ s.business_name or '—' }}</td>
+        <td>{{ s.risk_score if s.risk_score is not none else '—' }}/10</td>
+        <td>
+          {% if s.risk_label %}
+          <span class="risk-badge sev-{{ s.risk_label|upper }}">{{ s.risk_label|upper }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ s.high_count or 0 }} / {{ s.medium_count or 0 }} / {{ s.low_count or 0 }}</td>
+        <td>{% if s.paid %}<span class="paid-yes">Paid</span>{% else %}<span class="paid-no">—</span>{% endif %}</td>
+        <td><a href="/report/{{ s.job_id }}">View →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No completed scans yet{% if host %} for {{ host }}{% endif %}.</div>
+  {% endif %}
+</div>
+
+</body>
+</html>

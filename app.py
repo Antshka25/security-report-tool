@@ -10,19 +10,26 @@ import base64
 import requests as http_requests
 from datetime import datetime
 from flask import (Flask, render_template, request, jsonify,
-                   send_file, abort)
+                   send_file, abort, redirect)
 import io
 
 from scanner import resolve_target, validate_target, run_scan, build_scan_summary
 from ai_reporter import generate_report, generate_report_fallback
 from pdf_generator import build_pdf
 from web_checks import run_web_checks
+import db
 
 try:
     from flask_cors import CORS
     HAS_CORS = True
 except ImportError:
     HAS_CORS = False
+
+try:
+    import stripe
+    HAS_STRIPE = True
+except ImportError:
+    HAS_STRIPE = False
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-prod")
@@ -31,21 +38,29 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-prod")
 if HAS_CORS:
     CORS(app, resources={r"/*": {"origins": "*"}})
 
-# ── Job store (in-memory — use Redis for production) ──────────────────────────
-_jobs: dict[str, dict] = {}
-_jobs_lock = threading.Lock()
+db.init_db()
 
+# ── Stripe (optional — payment gate is skipped entirely if unconfigured) ──────
+STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_ID       = os.environ.get("STRIPE_PRICE_ID", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+if HAS_STRIPE and STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+
+
+def _payments_enabled() -> bool:
+    return bool(HAS_STRIPE and STRIPE_SECRET_KEY and STRIPE_PRICE_ID)
+
+
+# ── Job store (SQLite — see db.py; survives restarts, backs scan history) ─────
 
 def _set_job(job_id: str, update: dict):
-    with _jobs_lock:
-        if job_id not in _jobs:
-            _jobs[job_id] = {}
-        _jobs[job_id].update(update)
+    db.set_job(job_id, update)
 
 
 def _get_job(job_id: str) -> dict:
-    with _jobs_lock:
-        return dict(_jobs.get(job_id, {}))
+    return db.get_job(job_id)
 
 
 # ── Background scan worker ────────────────────────────────────────────────────
@@ -136,6 +151,8 @@ def start_scan():
         "progress": 0,
         "target":   target,
         "host":     resolved["host"],
+        "business_name": business_name,
+        "scan_type":      scan_type,
         "started_at": datetime.now().isoformat(),
     })
 
@@ -183,11 +200,94 @@ def view_report(job_id: str):
     return render_template("report.html", report=report, job_id=job_id)
 
 
+@app.route("/checkout/<job_id>")
+def checkout(job_id: str):
+    """Send the customer to Stripe Checkout before letting them download the PDF.
+    If Stripe isn't configured (no STRIPE_SECRET_KEY/STRIPE_PRICE_ID), or the
+    report is already paid for, skip straight to the download."""
+    job = _get_job(job_id)
+    if not job or job.get("status") != "done":
+        abort(404)
+
+    if job.get("paid") or not _payments_enabled():
+        return redirect(f"/download/{job_id}")
+
+    report = job.get("report", {})
+    target = report.get("meta", {}).get("target", job.get("target", "your site"))
+    base_url = request.url_root.rstrip("/")
+
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+        success_url=f"{base_url}/payment-success/{job_id}?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{base_url}/report/{job_id}",
+        metadata={"job_id": job_id, "target": target},
+    )
+    _set_job(job_id, {"stripe_session_id": session.id})
+    return redirect(session.url, code=303)
+
+
+@app.route("/payment-success/<job_id>")
+def payment_success(job_id: str):
+    """Stripe redirects here right after checkout. We verify the session
+    synchronously (rather than waiting on the webhook) so the customer isn't
+    stuck — the webhook below is just a robustness backstop."""
+    job = _get_job(job_id)
+    if not job:
+        abort(404)
+
+    session_id = request.args.get("session_id", "")
+    if session_id and _payments_enabled():
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+            if session.payment_status == "paid":
+                _set_job(job_id, {"paid": True, "stripe_session_id": session_id})
+        except Exception as e:
+            app.logger.error(f"Stripe session verify failed: {e}")
+
+    return redirect(f"/download/{job_id}")
+
+
+@app.route("/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    if not _payments_enabled():
+        abort(404)
+
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature", "")
+    try:
+        if STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+        else:
+            event = json.loads(payload)
+    except Exception as e:
+        app.logger.error(f"Stripe webhook rejected: {e}")
+        return jsonify({"error": "invalid signature"}), 400
+
+    if event.get("type") == "checkout.session.completed":
+        session = event["data"]["object"]
+        job_id = (session.get("metadata") or {}).get("job_id")
+        if job_id:
+            _set_job(job_id, {"paid": True})
+
+    return jsonify({"received": True})
+
+
+@app.route("/history")
+def history():
+    host = (request.args.get("host") or "").strip() or None
+    scans = db.list_history(host=host)
+    return render_template("history.html", scans=scans, host=host)
+
+
 @app.route("/download/<job_id>")
 def download_pdf(job_id: str):
     job = _get_job(job_id)
     if not job or job.get("status") != "done":
         abort(404)
+
+    if _payments_enabled() and not job.get("paid"):
+        return redirect(f"/checkout/{job_id}")
 
     pdf_bytes = job.get("pdf")
     if not pdf_bytes:
@@ -217,6 +317,12 @@ def email_report(job_id: str):
     job = _get_job(job_id)
     if not job or job.get("status") != "done":
         return jsonify({"error": "Report not ready"}), 404
+
+    if _payments_enabled() and not job.get("paid"):
+        return jsonify({
+            "error": "Payment required before emailing the report",
+            "checkout_url": f"/checkout/{job_id}",
+        }), 402
 
     data           = request.get_json(silent=True) or {}
     to_email       = (data.get("email") or "").strip()

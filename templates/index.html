@@ -119,6 +119,7 @@
 <nav>
   <div class="logo"><span>⬡</span> SecureCheck</div>
   <a href="#pricing">Pricing</a>
+  <a href="/history">History</a>
 </nav>
 
 <div class="hero">
@@ -379,7 +380,7 @@
     document.getElementById('stat-high').textContent     = summary.high_findings;
 
     document.getElementById('btn-view').href     = `/report/${currentJobId}`;
-    document.getElementById('btn-download').href = `/download/${currentJobId}`;
+    document.getElementById('btn-download').href = `/checkout/${currentJobId}`;
   }
 
   // Allow Enter to start scan
