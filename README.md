@@ -171,6 +171,30 @@ Set `STRIPE_SECRET_KEY` and `STRIPE_PRICE_ID` environment variables.
 
 ---
 
+### Step 8 — (Optional) Recurring scan monitoring
+
+Any finished report has a "🔁 Monitor This Site" button that registers the
+site for automatic daily/weekly/monthly re-scans. A background thread (started
+automatically at app startup — no extra setup needed) checks every 5 minutes
+for monitors that are due, re-scans them, and emails an alert (via the same
+Resend integration used for "Email This Report") noting whether the risk score
+went up, down, or stayed flat since the last run. View/manage monitors at
+`/monitors`.
+
+Two optional environment variables tune this:
+
+- `PUBLIC_BASE_URL` — your public site URL (e.g. `https://yourapp.up.railway.app`).
+  Without it, alert emails still send but won't include a clickable "View full
+  report" link.
+- `MONITOR_CHECK_INTERVAL_SECONDS` — how often the scheduler checks for due
+  monitors. Defaults to `300` (5 minutes).
+
+Monitoring reuses the existing `RESEND_API_KEY` — if that's not set, monitors
+still run and update their score history, they just skip sending the alert
+email.
+
+---
+
 ## Production checklist
 
 - [ ] nmap installed on server

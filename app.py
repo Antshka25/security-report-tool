@@ -5,6 +5,7 @@ Run: python app.py
 import os
 import uuid
 import threading
+import time
 import json
 import base64
 import requests as http_requests
@@ -75,6 +76,16 @@ if HAS_STRIPE and STRIPE_SECRET_KEY:
 
 def _payments_enabled() -> bool:
     return bool(HAS_STRIPE and STRIPE_SECRET_KEY and STRIPE_PRICE_ID)
+
+
+# ── Monitoring (recurring re-scans) ───────────────────────────────────────────
+# Used to build a clickable link in monitor-alert emails, which are sent from a
+# background thread with no Flask request context (so request.url_root isn't
+# available there). Optional — if unset, alert emails just omit the link.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+
+# How often (seconds) the scheduler wakes up to check for due monitors.
+MONITOR_CHECK_INTERVAL_SECONDS = int(os.environ.get("MONITOR_CHECK_INTERVAL_SECONDS", 300))
 
 
 # ── Job store (SQLite — see db.py; survives restarts, backs scan history) ─────
@@ -160,6 +171,150 @@ def _run_job(job_id: str, host: str, target_display: str,
         _set_job(job_id, {"status": "error", "error": str(e)})
 
 
+# ── Monitor worker (scheduled re-scans) ───────────────────────────────────────
+# Reuses _run_job exactly as-is — a monitor scan is just a normal scan that gets
+# its own job_id (so it shows up in /history like any other scan), but is kicked
+# off by the scheduler instead of a user clicking "Scan", and records its result
+# against the monitor row + sends an alert email when it finishes.
+
+def _run_monitor_scan(monitor: dict):
+    monitor_id     = monitor["id"]
+    host           = monitor["host"]
+    target_display = monitor.get("target") or host
+    business_name  = monitor.get("business_name") or ""
+    scan_type      = monitor.get("scan_type") or "standard"
+    prev_score     = monitor.get("last_score")
+
+    job_id = str(uuid.uuid4())
+    _set_job(job_id, {
+        "status":   "running",
+        "step":     "Starting scheduled re-scan…",
+        "progress": 0,
+        "target":   target_display,
+        "host":     host,
+        "business_name": business_name,
+        "scan_type":      scan_type,
+        "started_at": datetime.now().isoformat(),
+    })
+
+    # Run synchronously here — we're already inside our own background thread
+    # (started by the scheduler loop below), so there's no need for _run_job
+    # to spawn yet another thread.
+    _run_job(job_id, host, target_display, business_name, scan_type)
+
+    job    = _get_job(job_id)
+    report = job.get("report") or {}
+    succeeded = job.get("status") == "done"
+    new_score = report.get("risk_score") if succeeded else None
+
+    # On failure, record neither job_id nor score so the monitor keeps pointing
+    # at its last *successful* report instead of a broken/empty one.
+    db.record_monitor_run(monitor_id, job_id if succeeded else None, new_score)
+
+    if job.get("status") == "done":
+        try:
+            _send_monitor_alert(monitor, job_id, report, prev_score)
+        except Exception as e:
+            app.logger.error(f"Monitor alert email failed for monitor {monitor_id}: {e}")
+    else:
+        app.logger.warning(f"Monitor {monitor_id} scheduled re-scan failed: {job.get('error')}")
+
+
+def _send_monitor_alert(monitor: dict, job_id: str, report: dict, prev_score):
+    """Emails the monitor's owner the result of a scheduled re-scan, highlighting
+    the score change since the previous run. No-ops quietly if Resend isn't
+    configured, same as the manual /email/<job_id> route."""
+    resend_api_key = os.environ.get("RESEND_API_KEY", "")
+    if not resend_api_key:
+        app.logger.warning("Monitor alert skipped: RESEND_API_KEY not configured")
+        return
+
+    to_email = monitor.get("email")
+    if not to_email:
+        return
+
+    host      = monitor.get("host", "your site")
+    new_score = report.get("risk_score", 0)
+    risk      = report.get("risk_label", "UNKNOWN")
+    risk_color = '#ef4444' if risk in ('CRITICAL', 'HIGH') else '#f59e0b' if risk == 'MEDIUM' else '#10b981'
+
+    if prev_score is None:
+        trend_line  = "This is the first scheduled scan for this monitor — future scans will compare against this baseline."
+        trend_color = "#94a3b8"
+    else:
+        delta = new_score - prev_score
+        if delta > 0:
+            trend_line  = f"⚠️ Risk score went UP {delta} point(s) since the last scan ({prev_score}/10 → {new_score}/10)."
+            trend_color = "#ef4444"
+        elif delta < 0:
+            trend_line  = f"✅ Risk score improved by {abs(delta)} point(s) since the last scan ({prev_score}/10 → {new_score}/10)."
+            trend_color = "#10b981"
+        else:
+            trend_line  = f"No change in risk score since the last scan (steady at {new_score}/10)."
+            trend_color = "#94a3b8"
+
+    report_link = f"{PUBLIC_BASE_URL}/report/{job_id}" if PUBLIC_BASE_URL else None
+    link_html = (
+        f'<p style="margin-top:20px;"><a href="{report_link}" style="color:#00E5FF;">View the full report →</a></p>'
+        if report_link else ""
+    )
+
+    html_body = f"""
+    <html><body style="font-family:sans-serif;background:#07080f;color:#f0f4ff;padding:32px;">
+    <div style="max-width:560px;margin:0 auto;">
+      <h1 style="color:#00E5FF;font-size:24px;margin-bottom:4px;">⚡ RapidVuln Monitor</h1>
+      <p style="color:#94a3b8;margin-bottom:32px;">Scheduled re-scan complete for {host}</p>
+      <div style="background:#10131f;border:1px solid #1a2035;border-radius:12px;padding:20px;margin:24px 0;">
+        <div style="font-size:48px;font-weight:900;color:{risk_color}">{new_score}/10</div>
+        <div style="font-size:18px;font-weight:700;color:{risk_color};margin-bottom:12px;">{risk} RISK</div>
+        <p style="color:{trend_color};font-size:14px;margin:0;">{trend_line}</p>
+      </div>
+      {link_html}
+      <p style="color:#4a5568;font-size:11px;margin-top:32px;border-top:1px solid #1a2035;padding-top:16px;">
+        You're receiving this because {host} is registered for automatic monitoring on RapidVuln. Scans run automatically — no action needed.
+      </p>
+    </div>
+    </body></html>
+    """
+
+    try:
+        resp = http_requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": "RapidVuln <reports@rapidvuln.com>",
+                "to": [to_email],
+                "subject": f"🔁 Monitor Alert — {host} scanned ({risk} RISK {new_score}/10)",
+                "html": html_body,
+            },
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            app.logger.info(f"Monitor alert emailed to {to_email} for {host}")
+        else:
+            app.logger.error(f"Monitor alert email failed ({resp.status_code}): {resp.text}")
+    except Exception as e:
+        app.logger.error(f"Monitor alert email exception: {e}")
+
+
+def _monitor_scheduler_loop():
+    """Background loop: wakes up every MONITOR_CHECK_INTERVAL_SECONDS, finds any
+    monitors that are due for a re-scan, and kicks each one off in its own thread.
+    Safe to run as a single in-process loop because this app always runs as a
+    single process (see Procfile/Dockerfile — `python app.py`, no gunicorn
+    workers), so there's no risk of two loops double-firing the same scan."""
+    while True:
+        try:
+            for monitor in db.due_monitors():
+                threading.Thread(target=_run_monitor_scan, args=(monitor,), daemon=True).start()
+        except Exception as e:
+            app.logger.error(f"Monitor scheduler loop error: {e}")
+        time.sleep(MONITOR_CHECK_INTERVAL_SECONDS)
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -238,7 +393,18 @@ def view_report(job_id: str):
     if not job or job.get("status") != "done":
         abort(404)
     report = job.get("report", {})
-    return render_template("report.html", report=report, job_id=job_id)
+
+    # Look up this host's most recent *other* completed scan (if any) so the
+    # template can show a "previous scan was X/10" trend note.
+    prev_score = None
+    host = job.get("host") or report.get("meta", {}).get("host")
+    if host:
+        for s in db.list_history(host=host, limit=5):
+            if s.get("job_id") != job_id and s.get("risk_score") is not None:
+                prev_score = s["risk_score"]
+                break
+
+    return render_template("report.html", report=report, job_id=job_id, prev_score=prev_score)
 
 
 @app.route("/checkout/<job_id>")
@@ -451,7 +617,83 @@ def email_report(job_id: str):
         return jsonify({"error": f"Failed to send email: {str(e)}"}), 500
 
 
+@app.route("/monitor", methods=["POST"])
+def create_monitor_route():
+    """Register a finished scan's target for recurring automatic re-scans.
+    Called from the "Monitor this site" button/modal on report.html."""
+    data = request.get_json(silent=True) or {}
+    job_id         = (data.get("job_id") or "").strip()
+    to_email       = (data.get("email") or "").strip()
+    frequency_days = data.get("frequency_days", 7)
+
+    try:
+        frequency_days = int(frequency_days)
+    except (TypeError, ValueError):
+        frequency_days = 7
+    if frequency_days not in (1, 7, 30):
+        frequency_days = 7
+
+    if not job_id:
+        return jsonify({"error": "Missing job_id"}), 400
+    if not to_email or "@" not in to_email:
+        return jsonify({"error": "Valid email address required"}), 400
+
+    job = _get_job(job_id)
+    if not job or job.get("status") != "done":
+        return jsonify({"error": "Report not ready"}), 404
+
+    report        = job.get("report") or {}
+    host          = job.get("host") or report.get("meta", {}).get("host", "")
+    target        = job.get("target") or report.get("meta", {}).get("target", host)
+    business_name = job.get("business_name", "")
+    scan_type     = job.get("scan_type", "standard")
+
+    if not host:
+        return jsonify({"error": "Could not determine scan target"}), 400
+
+    monitor_id = db.create_monitor(host, target, business_name, scan_type, to_email, frequency_days)
+
+    label = {1: "day", 7: "week", 30: "month"}.get(frequency_days, f"{frequency_days} days")
+    return jsonify({
+        "ok": True,
+        "monitor_id": monitor_id,
+        "message": f"Now monitoring {host} every {label} — alerts go to {to_email}",
+    })
+
+
+@app.route("/monitors")
+def monitors_page():
+    """Lists active/paused monitors. Pass ?email=... to scope to one customer's
+    monitors (the modal links here with the email they just registered)."""
+    email = (request.args.get("email") or "").strip() or None
+    monitors = db.list_monitors(email=email)
+    return render_template("monitors.html", monitors=monitors, email=email)
+
+
+@app.route("/monitors/<int:monitor_id>/pause", methods=["POST"])
+def pause_monitor_route(monitor_id: int):
+    db.set_monitor_active(monitor_id, False)
+    return jsonify({"ok": True})
+
+
+@app.route("/monitors/<int:monitor_id>/resume", methods=["POST"])
+def resume_monitor_route(monitor_id: int):
+    db.set_monitor_active(monitor_id, True)
+    return jsonify({"ok": True})
+
+
+@app.route("/monitors/<int:monitor_id>/delete", methods=["POST"])
+def delete_monitor_route(monitor_id: int):
+    db.delete_monitor(monitor_id)
+    return jsonify({"ok": True})
+
+
 # ── Run ───────────────────────────────────────────────────────────────────────
+
+# Start the recurring-scan scheduler once, at process startup. Module-level (not
+# inside `if __name__ == "__main__"`) so it starts the same way db.init_db() does
+# above, regardless of how the process is launched.
+threading.Thread(target=_monitor_scheduler_loop, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

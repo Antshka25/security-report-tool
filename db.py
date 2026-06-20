@@ -10,6 +10,7 @@ import os
 import json
 import sqlite3
 import threading
+import datetime
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "rapidvuln.db"))
 
@@ -41,6 +42,24 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_host ON jobs(host);
 CREATE INDEX IF NOT EXISTS idx_jobs_stripe_session ON jobs(stripe_session_id);
+
+CREATE TABLE IF NOT EXISTS monitors (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    host            TEXT NOT NULL,
+    target          TEXT,
+    business_name   TEXT,
+    scan_type       TEXT DEFAULT 'standard',
+    email           TEXT NOT NULL,
+    frequency_days  INTEGER DEFAULT 7,
+    active          INTEGER DEFAULT 1,
+    last_job_id     TEXT,
+    last_score      INTEGER,
+    last_run_at     TEXT,
+    next_run_at     TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_monitors_due ON monitors(active, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_monitors_host ON monitors(host);
 """
 
 # Columns sent back to app.py as-is (no JSON/blob handling needed)
@@ -170,5 +189,128 @@ def list_history(host: str = None, limit: int = 100) -> list[dict]:
                     (limit,),
                 ).fetchall()
             return [{**dict(r), "paid": bool(r["paid"])} for r in rows]
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Monitors — recurring scheduled re-scans with score-over-time tracking.
+# ---------------------------------------------------------------------------
+
+
+def _now_iso() -> str:
+    return datetime.datetime.utcnow().isoformat()
+
+
+def _row_to_monitor(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d["active"] = bool(d["active"])
+    return d
+
+
+def create_monitor(host: str, target: str, business_name: str, scan_type: str,
+                    email: str, frequency_days: int = 7) -> int:
+    """Register a new recurring monitor. First run is scheduled immediately."""
+    now = _now_iso()
+    with _lock:
+        conn = _connect()
+        try:
+            cur = conn.execute("""
+                INSERT INTO monitors (host, target, business_name, scan_type, email,
+                                       frequency_days, active, next_run_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            """, (host, target, business_name, scan_type, email, frequency_days, now, now))
+            conn.commit()
+            return cur.lastrowid
+        finally:
+            conn.close()
+
+
+def list_monitors(email: str = None, host: str = None) -> list[dict]:
+    with _lock:
+        conn = _connect()
+        try:
+            query = "SELECT * FROM monitors WHERE 1=1"
+            params = []
+            if email:
+                query += " AND email = ?"
+                params.append(email)
+            if host:
+                query += " AND host = ?"
+                params.append(host)
+            query += " ORDER BY created_at DESC"
+            rows = conn.execute(query, params).fetchall()
+            return [_row_to_monitor(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def get_monitor(monitor_id: int) -> dict:
+    with _lock:
+        conn = _connect()
+        try:
+            row = conn.execute("SELECT * FROM monitors WHERE id = ?", (monitor_id,)).fetchone()
+            return _row_to_monitor(row) if row else {}
+        finally:
+            conn.close()
+
+
+def due_monitors() -> list[dict]:
+    """Active monitors whose next_run_at has already passed."""
+    now = _now_iso()
+    with _lock:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM monitors WHERE active = 1 AND next_run_at <= ?",
+                (now,),
+            ).fetchall()
+            return [_row_to_monitor(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def record_monitor_run(monitor_id: int, job_id: str = None, score: int = None):
+    """Called after a monitor's re-scan finishes: stamps the run and schedules the next one.
+    Pass job_id=None/score=None when the scan failed — COALESCE keeps the previous
+    last_job_id/last_score (a transient failure shouldn't erase score-trend history),
+    while last_run_at/next_run_at still advance so a permanently broken target doesn't
+    retry in a hot loop."""
+    with _lock:
+        conn = _connect()
+        try:
+            row = conn.execute("SELECT frequency_days FROM monitors WHERE id = ?", (monitor_id,)).fetchone()
+            freq = row["frequency_days"] if row else 7
+            now = datetime.datetime.utcnow()
+            next_run = (now + datetime.timedelta(days=freq)).isoformat()
+            conn.execute("""
+                UPDATE monitors
+                SET last_job_id = COALESCE(?, last_job_id),
+                    last_score  = COALESCE(?, last_score),
+                    last_run_at = ?,
+                    next_run_at = ?
+                WHERE id = ?
+            """, (job_id, score, now.isoformat(), next_run, monitor_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def set_monitor_active(monitor_id: int, active: bool):
+    with _lock:
+        conn = _connect()
+        try:
+            conn.execute("UPDATE monitors SET active = ? WHERE id = ?", (1 if active else 0, monitor_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def delete_monitor(monitor_id: int):
+    with _lock:
+        conn = _connect()
+        try:
+            conn.execute("DELETE FROM monitors WHERE id = ?", (monitor_id,))
+            conn.commit()
         finally:
             conn.close()
