@@ -177,7 +177,8 @@ def build_pdf(report: dict) -> bytes:
                          Paragraph(f"<b>{meta.get('target', '')}</b>",
                                    ParagraphStyle("tgt", fontName="Helvetica-Bold",
                                                   fontSize=14, textColor=C_WHITE, spaceAfter=4)),
-                         Paragraph(f"Open ports detected: <b>{meta.get('total_ports', 0)}</b>",
+                         Paragraph(f"Open ports detected: <b>{meta.get('total_ports', 0)}</b>" +
+                                   (f" &nbsp;·&nbsp; Public IP: <b>{meta.get('ip')}</b>" if meta.get('ip') else ""),
                                    S["body_muted"]),
                          Paragraph(report.get("risk_explanation", ""), S["body_muted"])]]]
     ms_table = Table(meta_score_data, colWidths=[100, W - 108])

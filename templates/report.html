@@ -162,6 +162,7 @@
         <div class="meta-item"><strong>Scan Date</strong>{{ report.meta.scan_date }}</div>
         <div class="meta-item"><strong>Scan Time</strong>{{ report.meta.scan_time }}</div>
         <div class="meta-item"><strong>Open Ports</strong>{{ report.meta.total_ports }}</div>
+        {% if report.meta.ip %}<div class="meta-item"><strong>Public IP</strong>{{ report.meta.ip }}</div>{% endif %}
         <div class="meta-item"><strong>AI Model</strong>{{ report.meta.model }}</div>
       </div>
     </div>

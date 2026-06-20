@@ -106,7 +106,19 @@ def run_scan(host: str, scan_type: str = "standard") -> dict:
         "full":     ["-T4", "-sV", "-sC", "-p-", "--open"],
     }.get(scan_type, ["-T4", "-sV", "--top-ports", "1000", "--open"])
 
-    cmd = ["nmap"] + nmap_flags + [host]
+    # Resolve to a concrete public IP and pin the scan there, rather than
+    # letting nmap re-resolve the hostname internally — keeps the scanned
+    # address consistent and lets us report which IP was actually tested.
+    try:
+        ipaddress.ip_address(host)
+        ip = host
+    except ValueError:
+        try:
+            ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            ip = host  # fall back to the hostname; nmap will attempt its own resolution
+
+    cmd = ["nmap"] + nmap_flags + [ip]
 
     try:
         proc = subprocess.run(
@@ -116,7 +128,7 @@ def run_scan(host: str, scan_type: str = "standard") -> dict:
 
         if not raw_output.strip():
             return {"error": f"Nmap returned no output. {stderr[:200]}",
-                    "raw": "", "ports": [], "host": host}
+                    "raw": "", "ports": [], "host": host, "ip": ip}
 
         ports = _parse_nmap_output(raw_output)
         return {
@@ -124,6 +136,7 @@ def run_scan(host: str, scan_type: str = "standard") -> dict:
             "raw": raw_output,
             "ports": ports,
             "host": host,
+            "ip": ip,
             "scan_type": scan_type,
         }
 
@@ -188,6 +201,7 @@ def build_scan_summary(scan_result: dict, extra_findings: list = None) -> dict:
     """
     ports = scan_result.get("ports", []) + (extra_findings or [])
     host  = scan_result.get("host", "")
+    ip    = scan_result.get("ip", "")
 
     # Sort merged list: by risk priority, then port number (non-numeric ports go last)
     ports.sort(key=lambda p: (
@@ -209,6 +223,7 @@ def build_scan_summary(scan_result: dict, extra_findings: list = None) -> dict:
 
     return {
         "host":        host,
+        "ip":          ip,
         "total_ports": len(open_ports),
         "total_findings": len(ports),
         "high_count":  len(high),
