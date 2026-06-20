@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>5 Cybersecurity Mistakes Small Businesses Make (Fixable in an Afternoon) | RapidVuln</title>
+  <meta name="description" content="The five most common security findings on small business website scans, why each one matters, and how to fix each without a developer."/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="blog.css"/>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">RAPID<span>VULN</span></a>
+  <ul>
+    <li><a href="/#how">How it works</a></li>
+    <li><a href="/#checks">What we check</a></li>
+    <li><a href="/#pricing">Pricing</a></li>
+    <li><a href="/blog/" class="active">Blog</a></li>
+    <li><a href="/#scan-top" class="nav-cta">Free scan</a></li>
+  </ul>
+</nav>
+
+<div class="wrap article">
+  <p class="article-meta">Common Mistakes · 6 min read</p>
+  <h1>5 cybersecurity mistakes small businesses make (fixable in an afternoon)</h1>
+
+  <p>These are the same handful of findings that show up across most small business scans. None require a security team or a budget — most are a single DNS record or a one-line server config change.</p>
+
+  <h2>1. No SPF or DMARC record</h2>
+  <p>This is the most common finding by a wide margin. Without it, anyone can send email that appears to come from your domain — a direct path to phishing your own customers or vendors. <strong>Fix:</strong> add an SPF TXT record and a DMARC TXT record to your DNS. See our <a href="spf-dkim-dmarc-explained.html" style="color:var(--accent)">full SPF/DKIM/DMARC guide</a> for exact values.</p>
+
+  <h2>2. Missing security headers (HSTS, CSP)</h2>
+  <p>Strict-Transport-Security (HSTS) forces browsers to always use the encrypted version of your site, closing off downgrade attacks on public wifi. Content-Security-Policy (CSP) restricts what scripts are allowed to run on your pages, which is one of the most effective defenses against cross-site scripting. Both are missing on the majority of small business sites we scan. <strong>Fix:</strong> add the headers in your web server config (Nginx, Apache) or, if you're on Cloudflare, enable HSTS directly in the dashboard under SSL/TLS → Edge Certificates.</p>
+
+  <h2>3. Outdated software with known vulnerabilities</h2>
+  <p>WordPress plugins, CMS versions, and server software that haven't been updated in months or years are one of the most exploited entry points — not because the vulnerabilities are exotic, but because they're public and well-documented (the CVE database, which RapidVuln checks sites against, exists specifically to catalog them). <strong>Fix:</strong> keep your CMS, plugins, and server software on a regular update schedule — most CMS platforms support automatic updates for minor versions.</p>
+
+  <h2>4. Exposed ports and services that should be internal</h2>
+  <p>Database ports (MySQL, PostgreSQL, MongoDB), remote access ports (RDP, VNC, Telnet), and admin panels are sometimes reachable from the open internet — usually unintentionally, left open from a default server configuration or an old setup that was never locked down. These are some of the highest-value targets for automated scanning. <strong>Fix:</strong> close ports you don't need publicly exposed at the firewall level, and put anything that must remain open behind a VPN or IP allowlist.</p>
+
+  <h2>5. No DKIM signing</h2>
+  <p>Related to #1 but distinct — DKIM cryptographically signs your outgoing email so receiving servers can verify it wasn't altered in transit. Without it, even a correctly configured SPF record only proves which server sent a message, not that the message is genuine. <strong>Fix:</strong> enable DKIM through your email provider's admin console (Google Workspace, Microsoft 365, and most other providers support this in a few clicks) and add the resulting TXT record to your DNS.</p>
+
+  <div class="callout">
+    None of these require hiring a security firm. They're the kind of thing that takes longer to <em>find</em> than to fix — which is the actual value of running a scan: knowing which of these five (if any) apply to you, specifically, instead of guessing.
+  </div>
+
+  <div class="cta-box">
+    <h3>Check which of these five apply to your site</h3>
+    <p>A free RapidVuln scan checks for all five, plus SSL status and CVE-known vulnerabilities, in about five minutes.</p>
+    <a class="btn-primary" href="/#scan-top">Run Your Free Scan →</a>
+  </div>
+</div>
+
+<footer>
+  <p>© 2026 RAPIDVULN</p>
+  <p>rapidvuln.com · Built for small businesses. Powered by real security tools.</p>
+</footer>
+
+</body>
+</html>

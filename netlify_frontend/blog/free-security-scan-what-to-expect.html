@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>What to Expect From Your Free RapidVuln Security Report | RapidVuln</title>
+  <meta name="description" content="A walkthrough of what RapidVuln actually checks, how risk scores are calculated, and what to do with your results once you have them."/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="blog.css"/>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">RAPID<span>VULN</span></a>
+  <ul>
+    <li><a href="/#how">How it works</a></li>
+    <li><a href="/#checks">What we check</a></li>
+    <li><a href="/#pricing">Pricing</a></li>
+    <li><a href="/blog/" class="active">Blog</a></li>
+    <li><a href="/#scan-top" class="nav-cta">Free scan</a></li>
+  </ul>
+</nav>
+
+<div class="wrap article">
+  <p class="article-meta">Using RapidVuln · 5 min read</p>
+  <h1>What to expect from your free RapidVuln security report</h1>
+
+  <p>If you've never run a security scan before, it's reasonable to wonder what you're actually getting before you type in your domain. Here's exactly what happens, end to end.</p>
+
+  <h2>What gets checked</h2>
+  <p>A standard scan runs several categories of checks against your site:</p>
+  <ul>
+    <li><strong>Open ports and exposed services</strong> — anything publicly reachable that shouldn't be (databases, remote access protocols, admin interfaces).</li>
+    <li><strong>SSL/TLS configuration</strong> — certificate validity, expiration, and whether HTTP properly redirects to HTTPS.</li>
+    <li><strong>Security headers</strong> — HSTS, Content-Security-Policy, Referrer-Policy, Permissions-Policy, and other headers that control how browsers protect your visitors.</li>
+    <li><strong>Email authentication</strong> — SPF, DKIM, and DMARC records that determine whether your domain can be spoofed.</li>
+    <li><strong>Known vulnerabilities (CVEs)</strong> — software versions detected on your site are checked against the national vulnerability database for publicly known security flaws.</li>
+  </ul>
+
+  <h2>How the risk score works</h2>
+  <p>Every finding is rated <strong>HIGH</strong>, <strong>MEDIUM</strong>, or <strong>LOW</strong> based on real-world exploitability and impact — a missing SPF record is rated higher than a missing Permissions-Policy header, because the former is actively exploited for fraud while the latter is a smaller, more theoretical exposure. Your overall score (out of 10) weights HIGH findings heaviest, so one serious issue moves the needle more than several minor ones.</p>
+
+  <h2>What you actually receive</h2>
+  <p>Once the scan completes (usually under five minutes), you get a plain-English PDF report — not a raw tool output dump. Each finding includes what it is, why it matters for your specific business (not generic security theory), and the exact steps to fix it, including config snippets where relevant. You don't need to know what "DMARC" means before reading the report; the report explains it.</p>
+
+  <div class="callout">
+    The goal isn't to hand you a list of acronyms and leave you to figure out what to do. Every finding in your report should be actionable by you or whoever manages your site, without needing to hire a security consultant first.
+  </div>
+
+  <h2>What to do once you have your report</h2>
+  <p>Start with anything marked HIGH — these are the findings with the clearest, most direct path to real damage (fraud, data exposure, site compromise). MEDIUM findings are worth fixing within a week or two. LOW findings are good hygiene but rarely urgent on their own. Most of what shows up is fixable through your DNS provider's dashboard or a short conversation with whoever hosts your site — it's uncommon for a small business scan to surface something that requires custom development work.</p>
+
+  <h2>One scan isn't a permanent answer</h2>
+  <p>A scan is a snapshot of your site at the moment it ran. New vulnerabilities get disclosed constantly, software updates change your exposure, and DNS settings sometimes get reverted accidentally during unrelated changes. That's the reasoning behind ongoing monitoring rather than a single one-time check — though a free one-time scan is the right place to start if you've never run one before.</p>
+
+  <div class="cta-box">
+    <h3>See your own results</h3>
+    <p>Your first scan is free, takes about five minutes, and requires nothing installed.</p>
+    <a class="btn-primary" href="/#scan-top">Run Your Free Scan →</a>
+  </div>
+</div>
+
+<footer>
+  <p>© 2026 RAPIDVULN</p>
+  <p>rapidvuln.com · Built for small businesses. Powered by real security tools.</p>
+</footer>
+
+</body>
+</html>

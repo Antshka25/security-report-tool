@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SPF, DKIM, and DMARC Explained for Non-Technical Business Owners | RapidVuln</title>
+  <meta name="description" content="What SPF, DKIM, and DMARC actually do, why missing them lets anyone send email pretending to be your business, and how to add the records yourself."/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="blog.css"/>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">RAPID<span>VULN</span></a>
+  <ul>
+    <li><a href="/#how">How it works</a></li>
+    <li><a href="/#checks">What we check</a></li>
+    <li><a href="/#pricing">Pricing</a></li>
+    <li><a href="/blog/" class="active">Blog</a></li>
+    <li><a href="/#scan-top" class="nav-cta">Free scan</a></li>
+  </ul>
+</nav>
+
+<div class="wrap article">
+  <p class="article-meta">Email Security · 7 min read</p>
+  <h1>SPF, DKIM, and DMARC explained for non-technical business owners</h1>
+
+  <p>If you've ever gotten a security report flagging "missing SPF record" or "no DMARC policy" and had no idea what that meant, you're not alone — these are three of the most common findings on small business scans, and also three of the least explained. Here's what they actually do, in plain English.</p>
+
+  <h2>The problem they all solve</h2>
+  <p>Email was never designed with sender verification in mind. By default, anyone can put <em>your</em> business name in the "From" field of an email and send it to anyone — there's no built-in check that stops them. SPF, DKIM, and DMARC are three DNS records that, together, let receiving mail servers (Gmail, Outlook, etc.) verify that an email claiming to be from your domain actually came from a server you authorized.</p>
+
+  <h2>SPF (Sender Policy Framework)</h2>
+  <p>SPF is a list, published in your DNS, of which mail servers are allowed to send email on behalf of your domain. When an email arrives claiming to be from <code>you@yourbusiness.com</code>, the receiving server checks: does the actual sending server appear on yourbusiness.com's approved list? If not, the email fails SPF.</p>
+  <div class="callout">
+    <strong>Without SPF:</strong> anyone, anywhere, can send email that appears to come from your domain. No special access needed — just knowledge of your domain name.
+  </div>
+
+  <h2>DKIM (DomainKeys Identified Mail)</h2>
+  <p>DKIM adds a cryptographic signature to outgoing email, generated using a private key only your mail provider has. The receiving server checks that signature against a public key published in your DNS. If it matches, the email provably came from your system and wasn't altered in transit.</p>
+  <p>Where SPF checks <em>which server</em> sent the email, DKIM checks <em>whether the email itself is genuine and unmodified</em>.</p>
+
+  <h2>DMARC (Domain-based Message Authentication, Reporting & Conformance)</h2>
+  <p>DMARC ties the other two together. It tells receiving servers what to do when an email fails SPF or DKIM checks: let it through anyway, send it to spam, or reject it outright. Without a DMARC policy, most mail servers will quietly accept failing messages by default — which means SPF and DKIM alone don't fully protect you.</p>
+
+  <h2>Why this matters even if you never send marketing email</h2>
+  <p>This isn't about email marketing deliverability — though it affects that too. It's about who can convincingly impersonate your business. Without these three records configured correctly, a scammer can send an invoice, a password reset, or a "payment details have changed" email that looks like it came directly from your domain, to your actual customers or vendors. That's a direct path to fraud, and it damages trust in your brand even though your systems were never technically "hacked."</p>
+
+  <h2>How to actually add these records</h2>
+  <p>All three are added as TXT records in your domain's DNS settings (through your domain registrar or DNS provider — GoDaddy, Cloudflare, Namecheap, etc.):</p>
+  <ul>
+    <li><strong>SPF:</strong> add a TXT record for <code>@</code> with a value like <code>v=spf1 include:_spf.google.com -all</code> (replace the include with your actual email provider's SPF mechanism — Google Workspace and Microsoft 365 both publish theirs).</li>
+    <li><strong>DKIM:</strong> generated and enabled through your email provider's admin console (Google Workspace: Admin Console → Apps → Gmail → Authenticate Email). It gives you a TXT record to add to DNS.</li>
+    <li><strong>DMARC:</strong> add a TXT record for <code>_dmarc</code> with a value like <code>v=DMARC1; p=quarantine; rua=mailto:you@yourdomain.com</code>. Start with <code>p=quarantine</code>, monitor for a week or two, then move to <code>p=reject</code> once you're confident nothing legitimate is being blocked.</li>
+  </ul>
+  <p>You can verify all three are working using free tools like <a href="https://mxtoolbox.com" style="color:var(--accent)">MXToolbox</a> after adding the records (DNS changes can take anywhere from minutes to 48 hours to propagate).</p>
+
+  <div class="cta-box">
+    <h3>Find out which of these you're missing</h3>
+    <p>RapidVuln checks SPF, DKIM, and DMARC automatically as part of every free scan.</p>
+    <a class="btn-primary" href="/#scan-top">Run Your Free Scan →</a>
+  </div>
+</div>
+
+<footer>
+  <p>© 2026 RAPIDVULN</p>
+  <p>rapidvuln.com · Built for small businesses. Powered by real security tools.</p>
+</footer>
+
+</body>
+</html>

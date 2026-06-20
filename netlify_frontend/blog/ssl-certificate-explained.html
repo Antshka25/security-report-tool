@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>What Is an SSL Certificate and Why Does Your Site Need One? | RapidVuln</title>
+  <meta name="description" content="What the padlock icon in your browser actually means, what SSL/TLS protects against, and what happens to your site when a certificate expires."/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="blog.css"/>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">RAPID<span>VULN</span></a>
+  <ul>
+    <li><a href="/#how">How it works</a></li>
+    <li><a href="/#checks">What we check</a></li>
+    <li><a href="/#pricing">Pricing</a></li>
+    <li><a href="/blog/" class="active">Blog</a></li>
+    <li><a href="/#scan-top" class="nav-cta">Free scan</a></li>
+  </ul>
+</nav>
+
+<div class="wrap article">
+  <p class="article-meta">Web Basics · 5 min read</p>
+  <h1>What is an SSL certificate, and why does your site need one?</h1>
+
+  <p>You've seen the padlock icon next to a website address and probably know, vaguely, that its absence is bad. Here's what's actually happening behind it, and why letting a certificate lapse is a bigger deal than it looks.</p>
+
+  <h2>What SSL/TLS actually does</h2>
+  <p>SSL (and its modern successor, TLS — people still say "SSL" out of habit) encrypts the connection between a visitor's browser and your server. Without it, anything submitted on your site — login credentials, contact form details, payment information — travels in plain text. Anyone positioned between the visitor and your server (a compromised public wifi network, a malicious browser extension, an ISP) can read it directly.</p>
+  <p>An SSL certificate is what makes that encryption possible, and it also verifies that the site a visitor's browser connected to is actually the one it claims to be — protecting against a category of attack where a fake server impersonates your domain.</p>
+
+  <h2>What happens without it</h2>
+  <ul>
+    <li><strong>Browser warnings.</strong> Chrome, Firefox, and Safari all show explicit "Not Secure" or full-page warnings for sites without valid HTTPS — most visitors leave immediately.</li>
+    <li><strong>Search ranking impact.</strong> Google has used HTTPS as a ranking signal for years; sites without it are disadvantaged in search results.</li>
+    <li><strong>Data exposed in transit.</strong> Any form on your site — contact, booking, login — sends data unencrypted and interceptable.</li>
+    <li><strong>Lost trust instantly.</strong> Even visitors who don't understand the technical details recognize a browser security warning as a reason to leave.</li>
+  </ul>
+
+  <h2>"We have HTTPS" isn't always the full story</h2>
+  <p>A scan checking SSL/TLS isn't just confirming a certificate exists — it's checking that the certificate is currently valid (not expired), correctly matches your domain, isn't using outdated/weak encryption protocols, and is set up so that the unencrypted (<code>http://</code>) version of your site properly redirects to the encrypted one rather than being served in parallel.</p>
+  <div class="callout">
+    Certificates expire — typically every 60–398 days depending on the issuer — and renewal is sometimes not automatic depending on how it was originally set up. A site that had valid SSL at launch can silently lose it months later if nobody's watching for the renewal.
+  </div>
+
+  <h2>Getting it set up (or fixed)</h2>
+  <p>If you don't have SSL at all: most modern hosting providers (Netlify, Vercel, Cloudflare, and most managed WordPress hosts) issue and renew certificates automatically at no cost via Let's Encrypt — there's often no action needed beyond checking a setting is enabled. If you manage your own server, <code>certbot</code> is the standard free tool for issuing and auto-renewing certificates.</p>
+  <p>If you have SSL but aren't sure it's configured correctly — valid, auto-renewing, properly redirecting — that's exactly what an automated scan checks for you, rather than requiring you to manually inspect certificate details.</p>
+
+  <div class="cta-box">
+    <h3>Confirm your SSL setup is actually correct</h3>
+    <p>RapidVuln checks certificate validity, expiration, and HTTPS redirect configuration as part of every free scan.</p>
+    <a class="btn-primary" href="/#scan-top">Run Your Free Scan →</a>
+  </div>
+</div>
+
+<footer>
+  <p>© 2026 RAPIDVULN</p>
+  <p>rapidvuln.com · Built for small businesses. Powered by real security tools.</p>
+</footer>
+
+</body>
+</html>
