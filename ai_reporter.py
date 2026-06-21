@@ -54,6 +54,7 @@ def _build_prompt(summary: dict, business_name: str = "") -> str:
         f"  - {_label(p)} ({p['service']}) — Risk: {p['risk']} — {p['reason']}"
         f"{' — Version: ' + p['version'] if p.get('version') else ''}"
         f"{' — CWE: ' + p['cwe'] if p.get('cwe') else ''}"
+        f"{' — Real-World Example: ' + p['real_world_example'] if p.get('real_world_example') else ''}"
         for p in summary["ports"]
     ) or "  - No issues detected"
 
@@ -86,7 +87,8 @@ Return ONLY this JSON structure (no markdown, no extra text):
       "business_risk": "What could actually happen to the business? Real consequences: ransomware, data stolen, website down, fines. Max 2 sentences.",
       "how_to_fix": "Specific action to take. Simple steps. Max 3 sentences.",
       "urgency": "Fix immediately|Fix within 1 week|Fix within 1 month|Monitor",
-      "cwe": "Copy the exact CWE reference (e.g. 'CWE-319') from the PORT DETAILS above for this finding if one is listed there. Use an empty string if none was listed. NEVER invent or guess a CWE ID."
+      "cwe": "Copy the exact CWE reference (e.g. 'CWE-319') from the PORT DETAILS above for this finding if one is listed there. Use an empty string if none was listed. NEVER invent or guess a CWE ID.",
+      "real_world_example": "Copy the exact Real-World Example text from the PORT DETAILS above for this finding, verbatim, if one is listed there. Use an empty string if none was listed. NEVER invent a new example."
     }}
   ],
   "top_recommendations": [
@@ -101,7 +103,8 @@ Return ONLY this JSON structure (no markdown, no extra text):
 
 Generate findings for ALL open ports listed above. Order findings by severity (HIGH first).
 Make the executive_summary and business_risk sections genuinely useful for a non-technical business owner.
-For the "cwe" field on each finding, copy it verbatim from PORT DETAILS if one is listed there — never invent, guess, or reuse a CWE ID from a different finding."""
+For the "cwe" field on each finding, copy it verbatim from PORT DETAILS if one is listed there — never invent, guess, or reuse a CWE ID from a different finding.
+For the "real_world_example" field, copy it verbatim from PORT DETAILS if one is listed there — never invent a new example or reuse one from a different finding."""
 
 
 # ── Main report generator ─────────────────────────────────────────────────────
@@ -162,6 +165,14 @@ def generate_report(summary: dict, business_name: str = "",
     for f in report["findings"]:
         if f.get("cwe") and f["cwe"] not in real_cwes:
             f["cwe"] = ""
+
+    # Same defense-in-depth for real_world_example: strip anything the model
+    # didn't copy verbatim from a finding we actually supplied, so a report
+    # never presents an AI-invented scenario as one of our vetted examples.
+    real_examples = {p["real_world_example"] for p in summary.get("ports", []) if p.get("real_world_example")}
+    for f in report["findings"]:
+        if f.get("real_world_example") and f["real_world_example"] not in real_examples:
+            f["real_world_example"] = ""
 
     # Attach human-readable name/explanation for any recognized CWE id.
     annotate_findings(report["findings"])
@@ -296,6 +307,7 @@ def generate_report_fallback(summary: dict, business_name: str = "",
             "how_to_fix":   fix,
             "urgency":      urgency,
             "cwe":          p.get("cwe", ""),
+            "real_world_example": p.get("real_world_example", ""),
         })
 
     # Attach human-readable name/explanation for any recognized CWE id.

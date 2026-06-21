@@ -55,6 +55,8 @@ _SENSITIVE_FILES = [
      "the application's environment file is publicly accessible, which typically contains database passwords, API keys, and other secrets",
      "Anyone can download this file and get direct access to your database, payment processor, email service, or "
      "other connected accounts using the credentials inside it.",
+     "Example: An automated bot that scans the internet for exposed .env files finds this one within hours of "
+     "it becoming public, and uses the database password inside it to log straight into the live database.",
      "Move the .env file outside the publicly served folder, or add a server rule to block it. "
      "Nginx: 'location ~ /\\.env { deny all; }' inside your server block. Apache: add a .htaccess rule "
      "'<Files \".env\"> Require all denied </Files>'. Then rotate every credential that was in the file, since it may already be compromised."),
@@ -62,45 +64,64 @@ _SENSITIVE_FILES = [
      "the site's .git folder is publicly accessible, which can let someone reconstruct your entire source code and commit history",
      "Anyone can use a free tool to rebuild your full source code and commit history from this folder, which "
      "often reveals secrets, internal logic, or vulnerabilities that were since 'fixed' but never rotated.",
+     "Example: A competitor or attacker rebuilds the site's full source history from the exposed .git folder, "
+     "including old commits — sometimes turning up a hardcoded password or API key that was removed from the "
+     "latest code but never rotated.",
      "Block access to the .git folder. Nginx: 'location ~ /\\.git { deny all; }'. Apache: '<DirectoryMatch \"\\.git\"> Require all denied </DirectoryMatch>'. "
      "Better yet, don't deploy the .git folder to your live server at all."),
     ("/wp-config.php.bak", "HIGH", "WordPress Config Backup Exposed",
      "a backup copy of wp-config.php is publicly downloadable, which contains your WordPress database credentials in plain text",
      "Anyone can download this file and get direct read/write access to your entire WordPress database, including "
      "customer data, orders, and admin password hashes.",
+     "Example: An attacker downloads this backup file, reads the database username and password in plain "
+     "text, and connects directly to the WordPress database — no login form needed.",
      "Delete this backup file from the server immediately (via FTP/file manager), or move it outside the public web folder. "
      "Never leave .bak, .old, or ~ copies of config files in a publicly accessible location."),
     ("/backup.sql", "HIGH", "Database Backup File Exposed",
      "a SQL database backup file is publicly downloadable",
      "Anyone can download your entire database — customer records, orders, password hashes — in one file.",
+     "Example: An attacker simply downloads this file and has every customer record, order, and password hash "
+     "the site has ever stored, without needing to break into anything.",
      "Delete or move this file outside the public web folder immediately. Store backups somewhere not served by the web server, such as private cloud storage."),
     ("/database.sql", "HIGH", "Database Backup File Exposed",
      "a SQL database file is publicly downloadable",
      "Anyone can download your entire database — customer records, orders, password hashes — in one file.",
+     "Example: An attacker downloads this file directly and walks away with the entire customer database in "
+     "one request, no exploitation required.",
      "Delete or move this file outside the public web folder immediately. Store backups somewhere not served by the web server, such as private cloud storage."),
     ("/.htpasswd", "HIGH", "Exposed .htpasswd File",
      "the .htpasswd password file is publicly downloadable",
      "This file contains hashed passwords protecting restricted areas of your site — once downloaded, an attacker "
      "can attempt to crack them offline at their leisure.",
+     "Example: An attacker downloads this file and runs it through an offline password-cracking tool, "
+     "eventually recovering the password protecting whatever area of the site it was meant to guard.",
      "Block access to .htpasswd in your server config (it should never be servable), and change the passwords it protects."),
     ("/phpinfo.php", "MEDIUM", "phpinfo() Page Exposed",
      "a phpinfo() debug page is publicly accessible, revealing detailed server configuration",
      "This page reveals your exact PHP version, installed modules, internal file paths, and sometimes other "
      "environment secrets — all useful information for planning a targeted attack.",
+     "Example: An attacker pulls up this page to see the exact PHP version and installed modules, then looks "
+     "up known vulnerabilities for that specific configuration instead of guessing blind.",
      "Delete this file from the server. It should never be left on a production site."),
     ("/info.php", "MEDIUM", "phpinfo() Page Exposed",
      "a phpinfo() debug page is publicly accessible, revealing detailed server configuration",
      "This page reveals your exact PHP version, installed modules, internal file paths, and sometimes other "
      "environment secrets — all useful information for planning a targeted attack.",
+     "Example: An attacker pulls up this page to see the exact PHP version and installed modules, then looks "
+     "up known vulnerabilities for that specific configuration instead of guessing blind.",
      "Delete this file from the server. It should never be left on a production site."),
     ("/.DS_Store", "LOW", "Exposed .DS_Store File",
      "a macOS .DS_Store file is publicly accessible, which can reveal the names of other files in the same folder",
      "This file can list the names of other files on the server in the same folder, sometimes giving an attacker "
      "hints about other things to probe for.",
+     "Example: An attacker parses this file to see the names of other files in the same folder — sometimes "
+     "turning up a backup file or admin script that was never meant to be discoverable.",
      "Delete the file and add a server rule to block it. Nginx: 'location ~ /\\.DS_Store$ { deny all; }'."),
     ("/web.config.bak", "HIGH", "IIS Config Backup Exposed",
      "a backup of web.config is publicly downloadable, which can contain connection strings and other secrets",
      "Connection strings and other secrets in this file can give direct access to your database or internal services.",
+     "Example: An attacker downloads this backup, finds the database connection string inside it, and uses "
+     "those credentials to connect to internal systems directly.",
      "Delete this backup file from the server immediately, and rotate any credentials it contained."),
 ]
 
@@ -169,7 +190,8 @@ def run_vuln_checks(host: str) -> list[dict]:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _finding(port, service, risk, reason, title="", version="",
-             category="vuln", how_to_fix="", urgency="", business_risk="", cwe=""):
+             category="vuln", how_to_fix="", urgency="", business_risk="", cwe="",
+             real_world_example=""):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -186,6 +208,8 @@ def _finding(port, service, risk, reason, title="", version="",
         # Verified CWE reference ID for this finding type — see web_checks.py's
         # _finding() for the sourcing/verification note.
         "cwe":        cwe,
+        # Short illustrative scenario — see web_checks.py's _finding() note.
+        "real_world_example": real_world_example,
         "how_to_fix": how_to_fix,
         "urgency":    urgency or (
             "Fix immediately" if risk == "HIGH" else
@@ -292,6 +316,11 @@ def _check_xss(target: dict) -> list[dict]:
             "browser while they're on your site, stealing login sessions, showing fake login forms, or "
             "redirecting them to a scam page. This can also get your site blacklisted by Google Safe Browsing."
         ),
+        real_world_example=(
+            "Example: An attacker emails a customer a link that looks like it points to the real site "
+            "(because it does) but contains a hidden script in the URL; clicking it runs that script in the "
+            "customer's browser, silently sending their session cookie to the attacker."
+        ),
         how_to_fix=(
             f"Escape/encode all user input before rendering it in HTML (e.g. htmlspecialchars() in PHP, or "
             f"the auto-escaping built into Flask/Django/Rails templates). Check {target['label']}. "
@@ -320,6 +349,11 @@ def _check_sqli(target: dict, baseline) -> list[dict]:
                     "An attacker could potentially read your entire database (customer records, passwords, "
                     "orders) or modify/delete data by sending crafted input to this field instead of normal "
                     "text. This is one of the most damaging and common website vulnerabilities."
+                ),
+                real_world_example=(
+                    "Example: An attacker submits a crafted value in this field that alters the underlying "
+                    "database query, returning records — or letting them modify records — that the form was "
+                    "never meant to expose."
                 ),
                 how_to_fix=(
                     f"Never build SQL queries by concatenating user input. Use parameterized queries / "
@@ -354,6 +388,11 @@ def _check_cmdi(target: dict, baseline) -> list[dict]:
                     "An attacker could potentially run arbitrary commands on your server, reading files, "
                     "installing malware, or taking the server over completely. This is one of the most "
                     "severe vulnerabilities a website can have."
+                ),
+                real_world_example=(
+                    "Example: An attacker submits input designed to be passed straight to the server's "
+                    "command line, using it to read files, install a backdoor, or take full control of the "
+                    "server — all through a field that looked like ordinary user input."
                 ),
                 how_to_fix=(
                     f"Never pass user input directly to a shell command. Use your language's built-in library "
@@ -391,7 +430,7 @@ def _check_exposed_files(base_url: str) -> list[dict]:
         pass
 
     findings = []
-    for path, risk, title, reason, business_risk, how_to_fix in _SENSITIVE_FILES:
+    for path, risk, title, reason, business_risk, real_world_example, how_to_fix in _SENSITIVE_FILES:
         try:
             r = httpx.get(urljoin(base_url, path), timeout=REQUEST_TIMEOUT, verify=False)
         except Exception:
@@ -402,7 +441,8 @@ def _check_exposed_files(base_url: str) -> list[dict]:
             continue
         findings.append(_finding(
             "FILE", "Information Disclosure", risk, reason, title,
-            cwe="CWE-552", business_risk=business_risk, how_to_fix=how_to_fix,
+            cwe="CWE-552", business_risk=business_risk,
+            real_world_example=real_world_example, how_to_fix=how_to_fix,
         ))
     return findings
 
@@ -428,6 +468,12 @@ def _scan_for_secrets(text: str, source_label: str, seen_types: set, findings: l
                 "Anyone who views your page source or downloaded JavaScript can copy this credential and use it "
                 "directly — potentially running up charges on your account, sending data through your services, "
                 "or accessing whatever this key controls."
+            ),
+            real_world_example=(
+                "Example: An automated bot scans newly indexed pages and JavaScript files for exactly this "
+                "pattern, and the moment a key like this becomes public, it's tested against the relevant "
+                "provider's API within minutes — sometimes resulting in surprise usage charges or a data breach "
+                "before anyone at the company notices."
             ),
             how_to_fix=(
                 f"Revoke/rotate this key immediately in the relevant provider's dashboard, then remove it from "
@@ -483,6 +529,11 @@ def _check_open_redirect(target: dict) -> list[dict]:
                 "Scammers can craft a link that starts with your real, trusted domain but redirects victims to a "
                 "phishing or malware site — making the scam far more convincing since the link itself looks legitimate."
             ),
+            real_world_example=(
+                "Example: An attacker emails a link that starts with your real domain (so it looks trustworthy "
+                "and passes a casual glance) but redirects to a fake login page; victims who enter their "
+                "credentials there hand them straight to the attacker."
+            ),
             how_to_fix=(
                 f"Validate redirect destinations against an allow-list of your own domain/paths before redirecting. "
                 f"Reject or ignore any redirect target that isn't a relative path or doesn't match your domain. Check {target['label']}."
@@ -513,6 +564,11 @@ def _check_cors(base_url: str) -> list[dict]:
                 "A malicious website a logged-in customer visits can silently make authenticated requests to "
                 "your site from their browser and read the response — potentially stealing account data, "
                 "orders, or session details without the customer ever noticing."
+            ),
+            real_world_example=(
+                "Example: A customer logged into your site visits an unrelated, malicious page in another tab; "
+                "that page silently fires a request to your site using the customer's own session and reads "
+                "back their account data, with nothing for the customer to notice or approve."
             ),
             how_to_fix=(
                 "Stop reflecting the request's Origin header back unconditionally. Use an explicit allow-list of "

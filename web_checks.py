@@ -67,7 +67,8 @@ def _is_ip(host: str) -> bool:
 
 
 def _finding(port, service, risk, reason, title="", version="",
-             category="web", how_to_fix="", urgency="", business_risk="", cwe=""):
+             category="web", how_to_fix="", urgency="", business_risk="", cwe="",
+             real_world_example=""):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -89,6 +90,11 @@ def _finding(port, service, risk, reason, title="", version="",
         # and/or official OWASP ZAP alert pages — left blank ("") rather than
         # guessed when no real CWE legitimately applies (e.g. WHOIS findings).
         "cwe":        cwe,
+        # A short, concrete, illustrative scenario showing how this exact
+        # weakness plays out in practice and what it costs the business —
+        # generic/hypothetical by design (never a specific named company or
+        # incident), left blank if a call site doesn't provide one.
+        "real_world_example": real_world_example,
         "how_to_fix": how_to_fix,
         "urgency":    urgency or (
             "Fix immediately" if risk == "HIGH" else
@@ -126,6 +132,11 @@ def _check_ssl(host: str) -> list[dict]:
                 "same network (public wifi, ISPs, etc.), and modern browsers will actively warn visitors that "
                 "your site is 'Not Secure' — which drives people away and can hurt your search rankings."
             ),
+            real_world_example=(
+                "Example: A visitor fills out a contact or login form on this site from a coffee-shop wifi "
+                "network. Because the connection isn't encrypted, anyone else on that same network can read "
+                "the form data — including a password — as it's sent."
+            ),
             how_to_fix=(
                 "Install an SSL certificate to enable HTTPS. "
                 "If you use a web host (GoDaddy, Bluehost, Cloudflare, etc.), go to their control panel and enable 'Free SSL' or 'Let's Encrypt'. "
@@ -154,6 +165,11 @@ def _check_ssl(host: str) -> list[dict]:
                     "compromised — costing you sales and leads, especially on any page where customers enter "
                     "personal or payment information."
                 ),
+                real_world_example=(
+                    "Example: A potential customer clicks through to checkout, sees a full-page 'Your "
+                    "connection is not private' warning, and closes the tab — assuming the site has been "
+                    "compromised rather than realizing it's a certificate misconfiguration."
+                ),
                 how_to_fix=(
                     "Replace the self-signed cert with a trusted one. "
                     "Use Let's Encrypt (free): run 'sudo certbot --nginx -d yourdomain.com' on your server. "
@@ -172,6 +188,11 @@ def _check_ssl(host: str) -> list[dict]:
                     "business is unsafe, broken, or even hacked — that's lost sales and damaged trust building up "
                     "for as long as it stays unfixed."
                 ),
+                real_world_example=(
+                    "Example: A returning customer bookmarks the site, comes back a week later, and is greeted "
+                    "with a security warning instead of the page they expect — most won't click through, and "
+                    "some will assume the business closed or was hacked."
+                ),
                 how_to_fix=(
                     "Renew your SSL certificate immediately. "
                     "If using Let's Encrypt: run 'sudo certbot renew' on your server. "
@@ -189,6 +210,11 @@ def _check_ssl(host: str) -> list[dict]:
                     "This warning makes your business look unprofessional or compromised, and many visitors "
                     "won't proceed past it — particularly damaging on login or checkout pages where trust matters most."
                 ),
+                real_world_example=(
+                    "Example: A visitor reaches the site via a link that uses the 'www' version of the domain "
+                    "while the certificate only covers the bare domain (or vice versa) — triggering a browser "
+                    "warning that makes a legitimate business look fraudulent."
+                ),
                 how_to_fix=(
                     "Get an SSL certificate that matches this exact domain name. "
                     "Check: the cert may be for 'www.yourdomain.com' but you're visiting 'yourdomain.com' (or vice versa). "
@@ -205,6 +231,11 @@ def _check_ssl(host: str) -> list[dict]:
                 business_risk=(
                     "Unresolved certificate problems quietly erode customer trust and can drive away traffic "
                     "before you even notice a dip in sales or inquiries."
+                ),
+                real_world_example=(
+                    "Example: Depending on the exact error, visitors may see anything from a vague browser "
+                    "warning to a hard block — either way, an unresolved certificate problem is one of the few "
+                    "security issues a customer can see with their own eyes, and it reads as 'this site isn't safe.'"
                 ),
                 how_to_fix="Contact your hosting provider or IT team to inspect and replace the SSL certificate. Test at https://www.ssllabs.com/ssltest/"
             ))
@@ -228,6 +259,11 @@ def _check_ssl(host: str) -> list[dict]:
                         "many will assume the site is broken or unsafe and leave, which means lost business every "
                         "day this stays unfixed."
                     ),
+                    real_world_example=(
+                        "Example: A certificate lapses unnoticed over a weekend; by Monday, every visitor — "
+                        "including customers checking an order — is blocked by a full-page warning, and support "
+                        "starts fielding 'is your site hacked?' messages."
+                    ),
                     how_to_fix="Run 'sudo certbot renew' immediately if using Let's Encrypt. Otherwise log into your hosting panel and renew the SSL certificate today."
                 ))
             elif days_left < 14:
@@ -241,6 +277,11 @@ def _check_ssl(host: str) -> list[dict]:
                         "leave instead of buying or contacting you — handling the renewal now avoids a sudden, "
                         "preventable drop in traffic and trust."
                     ),
+                    real_world_example=(
+                        "Example: A previous business let a certificate expire without anyone noticing until a "
+                        "customer called asking if the site had been hacked — renewing a few days ahead of time "
+                        "is the only difference between routine maintenance and an avoidable scare."
+                    ),
                     how_to_fix=f"Renew immediately. Let's Encrypt: run 'sudo certbot renew'. Hosting panel: find 'SSL/TLS' settings and click Renew. You have {days_left} days before visitors start seeing warnings."
                 ))
             elif days_left < 30:
@@ -253,6 +294,11 @@ def _check_ssl(host: str) -> list[dict]:
                         "Not urgent today, but if this lapses without warning, visitors will suddenly start seeing "
                         "security errors and conversions can drop overnight — renewing now avoids any disruption."
                     ),
+                    real_world_example=(
+                        "Example: A previous business let a certificate expire without anyone noticing until a "
+                        "customer called asking if the site had been hacked — renewing a few days ahead of time "
+                        "is the only difference between routine maintenance and an avoidable scare."
+                    ),
                     how_to_fix="Renew your SSL certificate this week. Let's Encrypt: 'sudo certbot renew'. For auto-renewal: 'sudo crontab -e' and add '0 12 * * * certbot renew --quiet'"
                 ))
             elif days_left < 90:
@@ -264,6 +310,11 @@ def _check_ssl(host: str) -> list[dict]:
                     business_risk=(
                         "Plenty of runway here, but a forgotten renewal later means visitors will eventually hit "
                         "security warnings out of nowhere — worth a calendar reminder so it never becomes urgent."
+                    ),
+                    real_world_example=(
+                        "Example: A previous business let a certificate expire without anyone noticing until a "
+                        "customer called asking if the site had been hacked — renewing a few days ahead of time "
+                        "is the only difference between routine maintenance and an avoidable scare."
                     ),
                     how_to_fix="Add a calendar reminder to renew in 60 days. Or set up auto-renewal: 'sudo systemctl enable certbot.timer' (Let's Encrypt).",
                     urgency="Monitor"
@@ -291,6 +342,11 @@ def _check_ssl(host: str) -> list[dict]:
                             "Security scanners and compliance audits (PCI-DSS, SOC 2, cyber-insurance "
                             "questionnaires, etc.) flag outdated TLS versions as a failing item, and major "
                             "browsers are gradually moving toward blocking these connections entirely."
+                        ),
+                        real_world_example=(
+                            "Example: A compliance auditor or cyber-insurance questionnaire runs an automated "
+                            "scan, flags the outdated TLS version as a failed control, and the business has to "
+                            "scramble to fix it before a policy renewal or contract can close."
                         ),
                         how_to_fix=(
                             "Disable TLS 1.0 and 1.1 in your web server config. "
@@ -322,6 +378,11 @@ def _check_ssl(host: str) -> list[dict]:
                     "An attacker who intercepts network traffic (public wifi, a compromised router, etc.) has a "
                     "real chance of decrypting it with this cipher, exposing whatever customers type — logins, "
                     "payment details, personal information."
+                ),
+                real_world_example=(
+                    "Example: An attacker on the same public wifi as a customer captures the encrypted traffic "
+                    "and, because of the weak cipher, is able to decrypt it later — recovering login credentials "
+                    "that were assumed to be protected."
                 ),
                 how_to_fix=(
                     "Disable weak ciphers and only allow modern, strong cipher suites. "
@@ -356,6 +417,11 @@ def _check_http_headers(host: str) -> list[dict]:
                     "Anyone who types or clicks an http:// link is sending their activity on your site — "
                     "potentially including form data or passwords — unencrypted, where it can be read by "
                     "anyone on the same public wifi or compromised network."
+                ),
+                real_world_example=(
+                    "Example: A customer types the domain into their browser without 'https://', lands on the "
+                    "unencrypted version of the site, and submits a form before ever reaching the secure page — "
+                    "sending that data in plain text the whole time."
                 ),
                 how_to_fix=(
                     "Add a permanent redirect from HTTP to HTTPS. "
@@ -394,6 +460,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "trick their browser into using the insecure version of your site and intercept what they type — "
                 "raising the odds of stolen logins or payment details."
             ),
+            real_world_example=(
+                "Example: An attacker on a shared network intercepts a visitor's first request (which defaults "
+                "to HTTP) before the redirect happens, and silently serves them a fake version of the page "
+                "instead of the real site."
+            ),
             how_to_fix=(
                 "Add the HSTS header to your web server. "
                 "Nginx: add 'add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;' in your server block. "
@@ -415,6 +486,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "'confirm purchase' — without realizing it, potentially leading to account takeovers or "
                 "unauthorized actions carried out under your brand's name."
             ),
+            real_world_example=(
+                "Example: An attacker embeds the site's 'delete account' or 'confirm payment' button inside an "
+                "invisible iframe on their own page, disguised under something like a fake 'play video' button — "
+                "a visitor's real click triggers the hidden action on your site."
+            ),
             how_to_fix=(
                 "Add the X-Frame-Options header. "
                 "Nginx: 'add_header X-Frame-Options \"SAMEORIGIN\" always;' "
@@ -434,6 +510,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "This is a minor gap on its own, but it slightly raises the odds that a malicious file could be "
                 "misread as something else by a visitor's browser, helping a separate attack succeed."
             ),
+            real_world_example=(
+                "Example: A user-uploaded file intended to be harmless (like an image) is reinterpreted by the "
+                "browser as executable script because the server never told it what the file actually was, "
+                "letting an unrelated vulnerability turn into a working attack."
+            ),
             how_to_fix=(
                 "Add: 'add_header X-Content-Type-Options \"nosniff\" always;' (Nginx) "
                 "or 'Header always set X-Content-Type-Options nosniff' (Apache). "
@@ -452,6 +533,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "If an attacker ever manages to slip malicious script onto your site (e.g. through a vulnerable "
                 "plugin or a comment field), there's nothing in place to stop it from running and stealing "
                 "customer data such as login sessions or payment details."
+            ),
+            real_world_example=(
+                "Example: A vulnerable comment form or compromised ad widget lets an attacker inject a script "
+                "tag; without CSP, the browser runs it without question and it quietly forwards every visitor's "
+                "session cookie to the attacker."
             ),
             how_to_fix=(
                 "Add a Content-Security-Policy header. Start with a basic policy: "
@@ -473,6 +559,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "ID), that information could leak to outside sites your pages link to — a small but easily "
                 "avoidable privacy gap."
             ),
+            real_world_example=(
+                "Example: A customer clicks an outbound link from a page whose URL happens to include an "
+                "account ID or a password-reset token, and that full address — token included — is handed to "
+                "the destination site in the Referer header."
+            ),
             how_to_fix=(
                 "Add: 'add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;' (Nginx) "
                 "or 'Header always set Referrer-Policy strict-origin-when-cross-origin' (Apache)."
@@ -490,6 +581,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "If you ever embed third-party ads, widgets, or analytics scripts, they could request a "
                 "visitor's camera, microphone, or location without you intending to allow it — an avoidable "
                 "privacy risk for your customers."
+            ),
+            real_world_example=(
+                "Example: An embedded ad network's script requests the visitor's location or microphone access "
+                "through a permission prompt the site owner never intended to allow, simply because nothing in "
+                "the page's headers restricted it."
             ),
             how_to_fix=(
                 "Add: 'add_header Permissions-Policy \"camera=(), microphone=(), geolocation=()\" always;' "
@@ -512,6 +608,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "Attackers use that exact version number to look up known, public vulnerabilities for that "
                 "specific software release — making it easier to plan a targeted attack instead of guessing blind."
             ),
+            real_world_example=(
+                "Example: An attacker searches a public vulnerability database for the exact server version "
+                "shown in the response headers and finds a known, unpatched exploit for it — turning a blind "
+                "guess into a targeted attack in seconds."
+            ),
             how_to_fix=(
                 f"Hide the server version. "
                 "Nginx: set 'server_tokens off;' in nginx.conf. "
@@ -533,6 +634,11 @@ def _check_http_headers(host: str) -> list[dict]:
                 "Knowing your exact tech stack lets an attacker focus their effort on vulnerabilities specific to "
                 "that platform, slightly increasing the odds of being targeted compared to a generic, "
                 "unidentified site."
+            ),
+            real_world_example=(
+                "Example: Knowing the exact framework and version in use, an attacker skips general "
+                "reconnaissance and goes straight to testing the specific, publicly known weaknesses for that "
+                "platform."
             ),
             how_to_fix=(
                 "Remove the X-Powered-By header. "
@@ -575,6 +681,12 @@ def _check_http_headers(host: str) -> list[dict]:
                         "Without these flags, a cookie is easier to steal through cross-site scripting or to "
                         "intercept over an unencrypted connection — and a stolen session cookie can let an "
                         "attacker impersonate that logged-in user without ever needing their password."
+                    ),
+                    real_world_example=(
+                        "Example: A visitor on public wifi has their session cookie intercepted because it "
+                        "wasn't marked Secure, or a malicious ad script reads it directly because it wasn't "
+                        "marked HttpOnly — either way, the attacker is now logged in as that user without ever "
+                        "seeing their password."
                     ),
                     how_to_fix=(
                         f"Add the missing flag(s) when setting this cookie: Secure (only send over HTTPS), "
@@ -622,6 +734,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                             "your business, and recipients have no way to tell them apart from the real thing — "
                             "putting your customers and your reputation at risk."
                         ),
+                        real_world_example=(
+                            "Example: A scammer sends an invoice-fraud email that appears to come from "
+                            "'billing@yourdomain.com,' asking a customer to wire payment to a new account — "
+                            "because SPF does nothing to stop it, the email sails through with no warning."
+                        ),
                         how_to_fix=(
                             "Change '+all' to '-all' (hard fail) in your SPF record in your DNS settings. "
                             "Log into your domain registrar (GoDaddy, Namecheap, etc.), go to DNS settings, "
@@ -641,6 +758,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                             "any warning label, raising the chance someone falls for a scam and blames your "
                             "company for it."
                         ),
+                        real_world_example=(
+                            "Example: A phishing email spoofing the company's domain lands in a customer's "
+                            "inbox with no spam warning, because the SPF record exists but is set to a value "
+                            "that doesn't actually instruct mail servers to reject or flag forgeries."
+                        ),
                         how_to_fix="Change '?all' to '~all' (soft fail) or '-all' (hard fail) in your DNS TXT record. Use '-all' for strongest protection."
                     ))
                 break
@@ -658,6 +780,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                 "Without SPF, scammers can convincingly impersonate your business by email — which can lead to "
                 "customers being defrauded, your domain's email reputation being damaged, and your own real "
                 "emails landing in spam as a result."
+            ),
+            real_world_example=(
+                "Example: A customer receives an email that looks exactly like it's from the business — same "
+                "display name, same domain — asking them to 'confirm' a payment or click a link, with nothing "
+                "in DNS to stop the forgery or warn the recipient."
             ),
             how_to_fix=(
                 "Add an SPF TXT record to your DNS. Log into your domain registrar, go to DNS, "
@@ -692,6 +819,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                             "today — you'll get reports about it after the fact, but nothing actually stops the "
                             "fraudulent emails from being delivered right now."
                         ),
+                        real_world_example=(
+                            "Example: Forged emails impersonating the business keep reaching customers' "
+                            "inboxes; DMARC reports quietly pile up showing exactly that it's happening, but "
+                            "because the policy is monitor-only, nothing actually blocks a single one of them."
+                        ),
                         how_to_fix=(
                             "Upgrade DMARC from p=none to p=quarantine or p=reject. "
                             "In your DNS, update the _dmarc TXT record: change 'p=none' to 'p=quarantine' first (sends suspicious mail to spam). "
@@ -714,6 +846,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                 "This makes it significantly easier for scammers to send convincing fake emails 'from' your "
                 "business — a common tactic in invoice fraud and phishing — which can directly cost your "
                 "customers money and damage trust in your brand."
+            ),
+            real_world_example=(
+                "Example: A scammer sends an invoice-fraud email that appears to come straight from the "
+                "business's own domain; with no DMARC record in place, nothing tells the recipient's mail "
+                "provider the message is forged, so it lands in the inbox looking completely legitimate."
             ),
             how_to_fix=(
                 "Add a DMARC TXT record to your DNS. Go to your domain registrar's DNS settings, "
@@ -746,6 +883,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                 "Email providers increasingly use DKIM as a trust signal — without it, your legitimate emails "
                 "are more likely to be flagged as suspicious or land in spam, hurting delivery of invoices, "
                 "marketing, and everyday customer communications."
+            ),
+            real_world_example=(
+                "Example: A legitimate invoice email from the business gets flagged as suspicious or dropped "
+                "into spam by the recipient's mail provider, simply because there's no DKIM signature to prove "
+                "the message wasn't altered or forged in transit."
             ),
             how_to_fix=(
                 "Enable DKIM signing through your email provider. "
@@ -782,6 +924,11 @@ def _check_dns_nslookup(host: str) -> list[dict]:
                 "Scammers can use this gap to send convincing fake emails that appear to come from your "
                 "business, putting your customers at risk and potentially damaging your reputation."
             ),
+            real_world_example=(
+                "Example: A scammer sends a payment-redirect email that looks like it came straight from the "
+                "business's own domain; with no SPF record to fail the check, the email passes through to "
+                "customers' inboxes unflagged."
+            ),
             how_to_fix=(
                 "Add a TXT record to your DNS for '@' with value: 'v=spf1 include:_spf.google.com -all' "
                 "(adjust for your email provider). Verify at https://mxtoolbox.com/spf.aspx"
@@ -798,6 +945,11 @@ def _check_dns_nslookup(host: str) -> list[dict]:
             business_risk=(
                 "This makes email scams impersonating your business easier to pull off, which can cost "
                 "customers money and erode trust in your brand."
+            ),
+            real_world_example=(
+                "Example: A fraudulent email impersonating the business reaches a customer's inbox with no "
+                "warning label, because nothing in DNS instructs mail providers to question or block messages "
+                "claiming to be from this domain."
             ),
             how_to_fix=(
                 "Add a TXT record for '_dmarc' with value: 'v=DMARC1; p=quarantine; rua=mailto:you@yourdomain.com' "
@@ -843,6 +995,11 @@ def _check_domain_expiration(host: str) -> list[dict]:
                 "warning, and after a short grace period anyone — including squatters or competitors — can "
                 "register it out from under you."
             ),
+            real_world_example=(
+                "Example: A business misses a renewal notice buried in spam; the domain lapses, the website and "
+                "every @company.com email address go dark without warning, and a squatter registers it the "
+                "moment the grace period ends."
+            ),
             how_to_fix=(
                 "Log into your domain registrar (GoDaddy, Namecheap, Google Domains, etc.) and renew the domain "
                 "immediately, before it enters redemption/auction status, which can cost far more to recover."
@@ -859,6 +1016,11 @@ def _check_domain_expiration(host: str) -> list[dict]:
                 "stops working — including invoices, password resets, and customer replies — until it's "
                 "renewed or, worst case, recovered from whoever registers it after it lapses."
             ),
+            real_world_example=(
+                "Example: The card on file for auto-renew has expired without anyone noticing; unless someone "
+                "renews manually in the next few days, the site and every email address on the domain go dark "
+                "with no advance warning to customers."
+            ),
             how_to_fix=(
                 f"Renew the domain now at your registrar — {days_left} days left. Turn on auto-renew and confirm "
                 "the card on file and contact email are current so this never happens silently again."
@@ -874,6 +1036,11 @@ def _check_domain_expiration(host: str) -> list[dict]:
                 "Not urgent yet, but a missed renewal takes the site and all email on this domain offline — "
                 "worth confirming auto-renew is on now rather than relying on remembering later."
             ),
+            real_world_example=(
+                "Example: A similar business assumed auto-renew was on, it wasn't, and the domain quietly "
+                "lapsed — a five-minute check now is the only thing standing between routine upkeep and that "
+                "same scramble."
+            ),
             how_to_fix="Confirm auto-renew is enabled at your registrar, or renew manually in the next few weeks.",
             urgency="Monitor"
         ))
@@ -887,8 +1054,13 @@ def _check_domain_expiration(host: str) -> list[dict]:
                 "Plenty of runway, but this is the kind of date that's easy to forget — a calendar reminder or "
                 "auto-renew now avoids any risk of losing the domain later."
             ),
+            real_world_example=(
+                "Example: Renewal dates like this are exactly the kind of thing that get forgotten between "
+                "other priorities — a quick calendar reminder now costs nothing and rules out a future scramble."
+            ),
             how_to_fix="Turn on auto-renew at your registrar, or add a calendar reminder for the renewal date.",
             urgency="Monitor"
         ))
 
     return findings
+                        

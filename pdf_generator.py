@@ -278,6 +278,7 @@ def build_pdf(report: dict) -> bytes:
             for label, key, color in [
                 ("WHAT IT IS",    "what_it_is",    C_WHITE),
                 ("BUSINESS RISK", "business_risk", colors.HexColor("#fcd34d")),
+                ("REAL-WORLD EXAMPLE", "real_world_example", C_ACCENT2),
                 ("HOW TO FIX",    "how_to_fix",    C_LOW),
             ]:
                 val = f.get(key, "")

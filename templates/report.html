@@ -249,6 +249,12 @@
             <label>Business Risk</label>
             <p>{{ f.business_risk or '—' }}</p>
           </div>
+          {% if f.real_world_example %}
+          <div class="finding-section">
+            <label>Real-World Example</label>
+            <p>{{ f.real_world_example }}</p>
+          </div>
+          {% endif %}
           <div class="finding-section">
             <label>How to Fix</label>
             <p>{{ f.how_to_fix or '—' }}</p>

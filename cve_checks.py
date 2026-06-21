@@ -199,6 +199,11 @@ def _lookup_cves(product: str, version: str) -> list[dict]:
                 "routinely scan for sites still running the affected version, since the exploit details are "
                 "already public."
             ),
+            real_world_example=(
+                f"Example: {cve_id} is a publicly documented vulnerability — once a CVE like this is disclosed, "
+                "automated scanners and bots begin probing the internet within days looking for sites still "
+                "running the affected version, often well before the site owner has installed the fix."
+            ),
             how_to_fix=(
                 f"Update {product} past version {version} to a patched release — check the vendor's changelog "
                 f"or security advisories. Details: https://nvd.nist.gov/vuln/detail/{cve_id}"
@@ -298,7 +303,8 @@ def _severity_to_risk(severity: str) -> str:
 
 
 def _finding(port, service, risk, reason, title="", version="",
-             category="cve", how_to_fix="", urgency="", business_risk=""):
+             category="cve", how_to_fix="", urgency="", business_risk="",
+             real_world_example=""):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -313,6 +319,7 @@ def _finding(port, service, risk, reason, title="", version="",
         "title":      title or f"{service} Issue",
         "category":   category,
         "how_to_fix": how_to_fix,
+        "real_world_example": real_world_example,
         "urgency":    urgency or (
             "Fix immediately" if risk == "HIGH" else
             "Fix within 1 week" if risk == "MEDIUM" else

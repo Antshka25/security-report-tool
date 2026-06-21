@@ -61,7 +61,8 @@ def run_supply_chain_checks(host: str) -> list[dict]:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _finding(port, service, risk, reason, title="", version="",
-             category="supply_chain", how_to_fix="", urgency="", business_risk="", cwe=""):
+             category="supply_chain", how_to_fix="", urgency="", business_risk="", cwe="",
+             real_world_example=""):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -78,6 +79,8 @@ def _finding(port, service, risk, reason, title="", version="",
         # Verified CWE reference ID for this finding type — see web_checks.py's
         # _finding() for the sourcing/verification note.
         "cwe":        cwe,
+        # Short illustrative scenario — see web_checks.py's _finding() note.
+        "real_world_example": real_world_example,
         "how_to_fix": how_to_fix,
         "urgency":    urgency or (
             "Fix immediately" if risk == "HIGH" else
@@ -116,6 +119,11 @@ def _check_csp_script_policy(headers: dict) -> list[dict]:
                 "where they hijack a widget or library your site trusts instead of attacking you directly — "
                 "nothing stops that code from running on every visitor's browser and stealing logins or payment data."
             ),
+            real_world_example=(
+                "Example: A third-party widget the site trusts and loads on every page gets compromised by "
+                "attackers upstream; because nothing restricts which scripts can run, the malicious update "
+                "executes on every visitor's browser the next time they load the page."
+            ),
             how_to_fix=(
                 "Add a script-src directive listing only the exact domains you actually load scripts from, e.g. "
                 "\"script-src 'self' https://cdn.yourtrustedvendor.com;\". Avoid 'unsafe-inline' and wildcards."
@@ -133,6 +141,11 @@ def _check_csp_script_policy(headers: dict) -> list[dict]:
                 "This setting defeats most of the protection CSP is meant to provide. If a third-party script "
                 "you rely on is ever compromised — the exact mechanism behind most 'watering hole' attacks — it "
                 "will execute without restriction and with no warning."
+            ),
+            real_world_example=(
+                "Example: A vendor's analytics or chat-widget script gets compromised at the source; because "
+                "the policy still allows it (or allows inline/eval scripts generally), the malicious code runs "
+                "exactly as if it belonged on the site, with no warning to anyone."
             ),
             how_to_fix=(
                 "Tighten script-src to an explicit allowlist of trusted domains and drop 'unsafe-inline'/'unsafe-eval'/wildcards. "
@@ -182,6 +195,11 @@ def _check_third_party_scripts(html: str, base_url: str) -> list[dict]:
                 "wifi, a compromised router, an ISP — can silently replace the script with malicious code, "
                 "turning your own page into the delivery point for an attack on your visitors."
             ),
+            real_world_example=(
+                "Example: A visitor on public wifi loads the page; an attacker on that same network swaps the "
+                "plain-HTTP script in transit for a malicious version, and it runs in that visitor's browser as "
+                "if it were the real thing."
+            ),
             how_to_fix=(
                 "Change every third-party script tag to load over https:// instead of http://. Most vendors "
                 "support HTTPS — update the <script src> URLs and remove any that don't."
@@ -202,6 +220,11 @@ def _check_third_party_scripts(html: str, base_url: str) -> list[dict]:
                 "instead of you directly — the malicious code they inject would run on your site with no "
                 "verification and no warning to you or your visitors."
             ),
+            real_world_example=(
+                "Example: A widely-used analytics or widget provider gets compromised (a real, recurring "
+                "attack pattern), and because the script loads without integrity verification, the malicious "
+                "version executes on every visitor's browser with no warning to you or them."
+            ),
             how_to_fix=(
                 "Add integrity and crossorigin attributes to each third-party <script> tag, e.g. "
                 "<script src=\"...\" integrity=\"sha384-...\" crossorigin=\"anonymous\"></script>. "
@@ -219,6 +242,11 @@ def _check_third_party_scripts(html: str, base_url: str) -> list[dict]:
                 "Every additional third-party script is another organization whose security posture your "
                 "visitors are implicitly trusting — a wider footprint means a wider attack surface for a "
                 "compromise to slip through unnoticed."
+            ),
+            real_world_example=(
+                "Example: One of dozens of third-party scripts a site loads gets compromised at its source; "
+                "with so many external providers in the mix, the bad update blends in and can run for weeks "
+                "before anyone notices the unusual behavior."
             ),
             how_to_fix=(
                 "Audit your third-party scripts and remove any that aren't actually needed. For the rest, apply "
