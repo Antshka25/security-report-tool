@@ -235,7 +235,7 @@
         <span class="urgency-tag">{{ f.urgency }}</span>
         {% endif %}
         {% if f.cwe %}
-        <span class="cwe-tag" title="Common Weakness Enumeration reference">{{ f.cwe }}</span>
+        <span class="cwe-tag" title="{{ f.cwe }}{% if f.cwe_name %} — {{ f.cwe_name }}{% endif %}{% if f.cwe_desc %}: {{ f.cwe_desc }}{% endif %}">{{ f.cwe }}</span>
         {% endif %}
         <span class="chevron">▼</span>
       </div>
@@ -253,6 +253,12 @@
             <label>How to Fix</label>
             <p>{{ f.how_to_fix or '—' }}</p>
           </div>
+          {% if f.cwe and f.cwe_name %}
+          <div class="finding-section">
+            <label>Reference</label>
+            <p>{{ f.cwe }} — {{ f.cwe_name }}{% if f.cwe_desc %}<br>{{ f.cwe_desc }}{% endif %}</p>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>

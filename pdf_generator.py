@@ -299,10 +299,15 @@ def build_pdf(report: dict) -> bytes:
 
             cwe = f.get("cwe", "")
             if cwe:
+                cwe_name = f.get("cwe_name", "")
+                cwe_desc = f.get("cwe_desc", "")
+                cwe_text = f"{cwe} — {cwe_name}" if cwe_name else cwe
+                if cwe_desc:
+                    cwe_text += f"<br/>{cwe_desc}"
                 rows.append([
                     Paragraph("REFERENCE", S["label"]),
-                    Paragraph(cwe, ParagraphStyle("cwe", fontName="Helvetica",
-                                                   fontSize=9, textColor=C_MUTED))
+                    Paragraph(cwe_text, ParagraphStyle("cwe", fontName="Helvetica",
+                                                        fontSize=9, textColor=C_MUTED, leading=12))
                 ])
 
             body_table = Table(rows, colWidths=[90, W - 100])

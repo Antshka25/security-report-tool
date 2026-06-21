@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Optional
 from openai import OpenAI
 
+from cwe_reference import annotate_findings
+
 
 # ── OpenAI client ─────────────────────────────────────────────────────────────
 
@@ -161,6 +163,9 @@ def generate_report(summary: dict, business_name: str = "",
         if f.get("cwe") and f["cwe"] not in real_cwes:
             f["cwe"] = ""
 
+    # Attach human-readable name/explanation for any recognized CWE id.
+    annotate_findings(report["findings"])
+
     return report
 
 
@@ -292,6 +297,9 @@ def generate_report_fallback(summary: dict, business_name: str = "",
             "urgency":      urgency,
             "cwe":          p.get("cwe", ""),
         })
+
+    # Attach human-readable name/explanation for any recognized CWE id.
+    annotate_findings(findings)
 
     score = summary.get("risk_score", 0)
     label = summary.get("risk_label", "LOW")
