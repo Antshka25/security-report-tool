@@ -50,18 +50,34 @@ CWE_INFO = {
                  "The site's cross-domain access policy is configured too loosely, letting untrusted websites interact with it as if they were trusted."),
     "CWE-1021": ("Improper Restriction of Rendered UI Layers (Clickjacking)",
                  "The site doesn't prevent itself from being embedded inside another page, which attackers can exploit to trick users into clicking something they didn't intend to."),
+    "CWE-614":  ("Sensitive Cookie in HTTPS Session Without 'Secure' Attribute",
+                 "The cookie isn't marked Secure, so a browser could send it over an unencrypted connection where it can be intercepted."),
+    "CWE-1004": ("Sensitive Cookie Without 'HttpOnly' Flag",
+                 "The cookie isn't marked HttpOnly, so a malicious script on the page (such as one injected via XSS) can read and steal it."),
+    "CWE-1275": ("Sensitive Cookie with Improper SameSite Attribute",
+                 "The cookie's SameSite attribute isn't set to a safe value, making it easier for other sites to trick a visitor's browser into sending it in cross-site requests."),
 }
 
 
 def annotate_findings(findings):
     """
-    Attach cwe_name / cwe_desc to each finding whose 'cwe' field matches a
-    verified entry above. Findings with no cwe, or an id not in CWE_INFO,
-    are left untouched — we only ever show a name/explanation we've verified
-    against the real MITRE definition, never a guess.
+    Attach cwe_name / cwe_desc to each finding whose 'cwe' field matches one or
+    more verified entries above. A finding's cwe field is normally a single ID
+    (e.g. "CWE-89") but can be a comma-separated list (e.g. "CWE-1004, CWE-1275")
+    when more than one weakness applies at once — the cookie-flags check in
+    web_checks.py does this. Each id is looked up individually and only ids
+    found in CWE_INFO contribute a name/description, so an unrecognized or
+    hallucinated id never produces a fabricated entry.
     """
     for f in findings:
-        info = CWE_INFO.get(f.get("cwe", ""))
-        if info:
-            f["cwe_name"], f["cwe_desc"] = info
+        ids = [c.strip() for c in f.get("cwe", "").split(",") if c.strip()]
+        names, descs = [], []
+        for cid in ids:
+            info = CWE_INFO.get(cid)
+            if info:
+                names.append(info[0])
+                descs.append(info[1])
+        if names:
+            f["cwe_name"] = "; ".join(names)
+            f["cwe_desc"] = " ".join(descs)
     return findings
