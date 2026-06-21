@@ -54,6 +54,9 @@
     .scan-type.active { border-color: var(--accent); background: rgba(124,58,237,0.12); }
     .scan-type .name { font-weight: 700; font-size: 13px; margin-bottom: 3px; }
     .scan-type .desc { font-size: 11px; color: var(--muted); }
+    .scan-authorize { margin: 4px 0 16px; font-size: 12px; color: var(--muted); display: flex; align-items: flex-start; gap: 8px; }
+    .scan-authorize input[type="checkbox"] { margin-top: 2px; accent-color: var(--accent); cursor: pointer; }
+    .scan-authorize label { cursor: pointer; }
     .btn-scan {
       width: 100%; background: var(--accent); color: white; border: none;
       border-radius: 10px; padding: 15px; font-size: 16px; font-weight: 700;
@@ -160,6 +163,11 @@
         <div class="desc">All ports + scripts<br>~10 minutes</div>
       </div>
     </div>
+  </div>
+
+  <div class="scan-authorize">
+    <input type="checkbox" id="scan-authorize-checkbox" />
+    <label for="scan-authorize-checkbox">I own this website or am authorized to scan it.</label>
   </div>
 
   <button class="btn-scan" id="btn-scan" onclick="startScan()">
@@ -308,6 +316,12 @@
       return;
     }
 
+    const authBox = document.getElementById('scan-authorize-checkbox');
+    if (!authBox.checked) {
+      showError('You must confirm you own or are authorized to scan this site');
+      return;
+    }
+
     // UI
     document.getElementById('btn-scan').disabled = true;
     document.getElementById('btn-scan').textContent = '⏳ Scanning…';
@@ -319,7 +333,7 @@
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
-          target, business_name: biz, scan_type: selectedScanType
+          target, business_name: biz, scan_type: selectedScanType, authorized: true
         })
       });
       const data = await res.json();

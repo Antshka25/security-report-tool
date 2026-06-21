@@ -20,6 +20,7 @@ from pdf_generator import build_pdf
 from web_checks import run_web_checks
 from vuln_checks import run_vuln_checks
 from cve_checks import run_cve_checks
+from supply_chain_checks import run_supply_chain_checks
 import db
 
 try:
@@ -139,6 +140,13 @@ def _run_job(job_id: str, host: str, target_display: str,
             web_findings.extend(run_cve_checks(host))
         except Exception as cve_err:
             app.logger.warning(f"CVE checks failed ({cve_err}), continuing without them")
+
+        # Step 2e: Watering-hole / supply-chain script risk (CSP laxity, missing SRI, mixed content)
+        _set_job(job_id, {"step": "Checking for watering-hole risks…", "progress": 53})
+        try:
+            web_findings.extend(run_supply_chain_checks(host))
+        except Exception as supply_chain_err:
+            app.logger.warning(f"Supply-chain checks failed ({supply_chain_err}), continuing without them")
 
         # Step 3: Build summary (merge nmap + web findings)
         _set_job(job_id, {"step": "Analysing all findings…", "progress": 55})
