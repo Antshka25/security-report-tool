@@ -51,6 +51,7 @@ def _build_prompt(summary: dict, business_name: str = "") -> str:
     ports_text = "\n".join(
         f"  - {_label(p)} ({p['service']}) — Risk: {p['risk']} — {p['reason']}"
         f"{' — Version: ' + p['version'] if p.get('version') else ''}"
+        f"{' — CWE: ' + p['cwe'] if p.get('cwe') else ''}"
         for p in summary["ports"]
     ) or "  - No issues detected"
 
@@ -82,7 +83,8 @@ Return ONLY this JSON structure (no markdown, no extra text):
       "what_it_is": "Plain English: what is this port/service? Max 1 sentence.",
       "business_risk": "What could actually happen to the business? Real consequences: ransomware, data stolen, website down, fines. Max 2 sentences.",
       "how_to_fix": "Specific action to take. Simple steps. Max 3 sentences.",
-      "urgency": "Fix immediately|Fix within 1 week|Fix within 1 month|Monitor"
+      "urgency": "Fix immediately|Fix within 1 week|Fix within 1 month|Monitor",
+      "cwe": "Copy the exact CWE reference (e.g. 'CWE-319') from the PORT DETAILS above for this finding if one is listed there. Use an empty string if none was listed. NEVER invent or guess a CWE ID."
     }}
   ],
   "top_recommendations": [
@@ -96,7 +98,8 @@ Return ONLY this JSON structure (no markdown, no extra text):
 }}
 
 Generate findings for ALL open ports listed above. Order findings by severity (HIGH first).
-Make the executive_summary and business_risk sections genuinely useful for a non-technical business owner."""
+Make the executive_summary and business_risk sections genuinely useful for a non-technical business owner.
+For the "cwe" field on each finding, copy it verbatim from PORT DETAILS if one is listed there — never invent, guess, or reuse a CWE ID from a different finding."""
 
 
 # ── Main report generator ─────────────────────────────────────────────────────
@@ -148,6 +151,15 @@ def generate_report(summary: dict, business_name: str = "",
     # Normalise severity capitalization
     for f in report["findings"]:
         f["severity"] = f.get("severity", "INFO").upper()
+
+    # Defense-in-depth: even though the prompt instructs the model to copy CWE
+    # IDs verbatim and never invent one, strip any "cwe" value that doesn't
+    # match a real CWE we actually supplied in PORT DETAILS — a security report
+    # must never present a fabricated reference ID as fact.
+    real_cwes = {p["cwe"] for p in summary.get("ports", []) if p.get("cwe")}
+    for f in report["findings"]:
+        if f.get("cwe") and f["cwe"] not in real_cwes:
+            f["cwe"] = ""
 
     return report
 
@@ -278,6 +290,7 @@ def generate_report_fallback(summary: dict, business_name: str = "",
             "business_risk": biz,
             "how_to_fix":   fix,
             "urgency":      urgency,
+            "cwe":          p.get("cwe", ""),
         })
 
     score = summary.get("risk_score", 0)

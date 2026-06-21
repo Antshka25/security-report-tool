@@ -81,6 +81,7 @@
     .finding-port { font-size: 12px; color: var(--muted); }
     .sev-badge { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; padding: 3px 8px; border-radius: 4px; }
     .urgency-tag { font-size: 11px; color: var(--muted); }
+    .cwe-tag { font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; }
     .chevron { color: var(--dim); transition: transform 0.2s; font-size: 12px; }
     .finding.open .chevron { transform: rotate(180deg); }
     .finding-body { display: none; padding: 0 18px 18px; }
@@ -232,6 +233,9 @@
         <span class="sev-badge sev-{{ sev }}">{{ sev }}</span>
         {% if f.urgency %}
         <span class="urgency-tag">{{ f.urgency }}</span>
+        {% endif %}
+        {% if f.cwe %}
+        <span class="cwe-tag" title="Common Weakness Enumeration reference">{{ f.cwe }}</span>
         {% endif %}
         <span class="chevron">▼</span>
       </div>

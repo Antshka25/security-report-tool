@@ -169,7 +169,7 @@ def run_vuln_checks(host: str) -> list[dict]:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _finding(port, service, risk, reason, title="", version="",
-             category="vuln", how_to_fix="", urgency="", business_risk=""):
+             category="vuln", how_to_fix="", urgency="", business_risk="", cwe=""):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -183,6 +183,9 @@ def _finding(port, service, risk, reason, title="", version="",
         "dangerous":  risk in ("HIGH", "MEDIUM"),
         "title":      title or f"{service} Issue",
         "category":   category,
+        # Verified CWE reference ID for this finding type — see web_checks.py's
+        # _finding() for the sourcing/verification note.
+        "cwe":        cwe,
         "how_to_fix": how_to_fix,
         "urgency":    urgency or (
             "Fix immediately" if risk == "HIGH" else
@@ -283,6 +286,7 @@ def _check_xss(target: dict) -> list[dict]:
         f"{target['label']} reflects user input back into the page without escaping it, "
         f"a real attacker could inject a script that runs in visitors' browsers",
         "Reflected Cross-Site Scripting (XSS)",
+        cwe="CWE-79",
         business_risk=(
             "An attacker can craft a link that, when a customer clicks it, runs malicious code in their "
             "browser while they're on your site, stealing login sessions, showing fake login forms, or "
@@ -311,6 +315,7 @@ def _check_sqli(target: dict, baseline) -> list[dict]:
                 f"{target['label']} returned a database error message after being sent a quote character, "
                 f"a strong sign the input reaches a SQL query without being sanitized",
                 "Possible SQL Injection",
+                cwe="CWE-89",
                 business_risk=(
                     "An attacker could potentially read your entire database (customer records, passwords, "
                     "orders) or modify/delete data by sending crafted input to this field instead of normal "
@@ -344,6 +349,7 @@ def _check_cmdi(target: dict, baseline) -> list[dict]:
                 f"{target['label']} took {elapsed:.1f}s to respond to a harmless 'sleep {CMDI_DELAY}' payload "
                 f"(normal response: {baseline_elapsed:.1f}s), a strong sign the input reaches a system shell",
                 "Possible OS Command Injection",
+                cwe="CWE-78",
                 business_risk=(
                     "An attacker could potentially run arbitrary commands on your server, reading files, "
                     "installing malware, or taking the server over completely. This is one of the most "
@@ -396,7 +402,7 @@ def _check_exposed_files(base_url: str) -> list[dict]:
             continue
         findings.append(_finding(
             "FILE", "Information Disclosure", risk, reason, title,
-            business_risk=business_risk, how_to_fix=how_to_fix,
+            cwe="CWE-552", business_risk=business_risk, how_to_fix=how_to_fix,
         ))
     return findings
 
@@ -417,6 +423,7 @@ def _scan_for_secrets(text: str, source_label: str, seen_types: set, findings: l
             "SECRET", "Exposed Credential", "HIGH",
             f"A {name} was found exposed in {source_label} ({masked}) — visible to anyone who views the page source",
             f"Exposed {name} in Page Source",
+            cwe="CWE-798",
             business_risk=(
                 "Anyone who views your page source or downloaded JavaScript can copy this credential and use it "
                 "directly — potentially running up charges on your account, sending data through your services, "
@@ -471,6 +478,7 @@ def _check_open_redirect(target: dict) -> list[dict]:
             "REDIR", "Open Redirect", "MEDIUM",
             f"{target['label']} redirects to an attacker-controlled external URL when given one, without validating it stays on this domain",
             "Open Redirect Vulnerability",
+            cwe="CWE-601",
             business_risk=(
                 "Scammers can craft a link that starts with your real, trusted domain but redirects victims to a "
                 "phishing or malware site — making the scam far more convincing since the link itself looks legitimate."
@@ -500,6 +508,7 @@ def _check_cors(base_url: str) -> list[dict]:
             "the site reflects any Origin header back in Access-Control-Allow-Origin while also allowing "
             "credentials, letting any other website read logged-in users' data through their browser",
             "CORS Misconfiguration (Reflected Origin + Credentials)",
+            cwe="CWE-942",
             business_risk=(
                 "A malicious website a logged-in customer visits can silently make authenticated requests to "
                 "your site from their browser and read the response — potentially stealing account data, "

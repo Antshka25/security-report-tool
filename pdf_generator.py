@@ -297,6 +297,14 @@ def build_pdf(report: dict) -> bytes:
                                              fontSize=10, textColor=col))
                 ])
 
+            cwe = f.get("cwe", "")
+            if cwe:
+                rows.append([
+                    Paragraph("REFERENCE", S["label"]),
+                    Paragraph(cwe, ParagraphStyle("cwe", fontName="Helvetica",
+                                                   fontSize=9, textColor=C_MUTED))
+                ])
+
             body_table = Table(rows, colWidths=[90, W - 100])
             body_table.setStyle(TableStyle([
                 ("VALIGN",        (0, 0), (-1, -1), "TOP"),

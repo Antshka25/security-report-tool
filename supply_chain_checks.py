@@ -61,7 +61,7 @@ def run_supply_chain_checks(host: str) -> list[dict]:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _finding(port, service, risk, reason, title="", version="",
-             category="supply_chain", how_to_fix="", urgency="", business_risk=""):
+             category="supply_chain", how_to_fix="", urgency="", business_risk="", cwe=""):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -75,6 +75,9 @@ def _finding(port, service, risk, reason, title="", version="",
         "dangerous":  risk in ("HIGH", "MEDIUM"),
         "title":      title or f"{service} Issue",
         "category":   category,
+        # Verified CWE reference ID for this finding type — see web_checks.py's
+        # _finding() for the sourcing/verification note.
+        "cwe":        cwe,
         "how_to_fix": how_to_fix,
         "urgency":    urgency or (
             "Fix immediately" if risk == "HIGH" else
@@ -107,6 +110,7 @@ def _check_csp_script_policy(headers: dict) -> list[dict]:
             "HTTPS", "Content Security Policy", "MEDIUM",
             "CSP is set but has no script-src or default-src directive — script execution isn't restricted at all",
             "CSP Missing script-src Restriction",
+            cwe="CWE-693",
             business_risk=(
                 "If an attacker compromises any third-party script you load — a classic 'watering hole' tactic, "
                 "where they hijack a widget or library your site trusts instead of attacking you directly — "
@@ -124,6 +128,7 @@ def _check_csp_script_policy(headers: dict) -> list[dict]:
             "HTTPS", "Content Security Policy", "MEDIUM",
             f"CSP script-src allows {', '.join(loose_markers)} — an injected or hijacked script can still run freely",
             "CSP script-src Too Permissive",
+            cwe="CWE-693",
             business_risk=(
                 "This setting defeats most of the protection CSP is meant to provide. If a third-party script "
                 "you rely on is ever compromised — the exact mechanism behind most 'watering hole' attacks — it "
@@ -171,6 +176,7 @@ def _check_third_party_scripts(html: str, base_url: str) -> list[dict]:
             f"Script(s) loaded over plain HTTP from: {', '.join(sorted(set(insecure)))} — "
             "anyone on the network path can swap in malicious code",
             "Insecure (HTTP) Third-Party Script Load",
+            cwe="CWE-494",
             business_risk=(
                 "Any attacker positioned on the network between a visitor and that script's server — public "
                 "wifi, a compromised router, an ISP — can silently replace the script with malicious code, "
@@ -189,6 +195,7 @@ def _check_third_party_scripts(html: str, base_url: str) -> list[dict]:
             f"{len(unique_domains)} third-party script source(s) loaded without Subresource Integrity (SRI): "
             f"{', '.join(unique_domains)}",
             "Third-Party Scripts Missing Subresource Integrity (SRI)",
+            cwe="CWE-353",
             business_risk=(
                 "If any of these third-party providers is ever compromised — a real, recurring attack pattern "
                 "called a 'watering hole' or supply-chain attack, where attackers hit a widely-trusted vendor "
@@ -207,6 +214,7 @@ def _check_third_party_scripts(html: str, base_url: str) -> list[dict]:
             "HTTPS", "Third-Party Script Loading", "LOW",
             f"{len(third_party_domains)} distinct third-party domains serve scripts on this page",
             "Large Third-Party Script Footprint",
+            cwe="CWE-829",
             business_risk=(
                 "Every additional third-party script is another organization whose security posture your "
                 "visitors are implicitly trusting — a wider footprint means a wider attack surface for a "

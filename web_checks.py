@@ -67,7 +67,7 @@ def _is_ip(host: str) -> bool:
 
 
 def _finding(port, service, risk, reason, title="", version="",
-             category="web", how_to_fix="", urgency="", business_risk=""):
+             category="web", how_to_fix="", urgency="", business_risk="", cwe=""):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -84,6 +84,11 @@ def _finding(port, service, risk, reason, title="", version="",
         "dangerous":  risk in ("HIGH", "MEDIUM"),
         "title":      title or f"{service} Issue",
         "category":   category,
+        # Verified CWE (Common Weakness Enumeration) reference ID(s) for this
+        # finding type, e.g. "CWE-319". Cross-checked against cwe.mitre.org
+        # and/or official OWASP ZAP alert pages — left blank ("") rather than
+        # guessed when no real CWE legitimately applies (e.g. WHOIS findings).
+        "cwe":        cwe,
         "how_to_fix": how_to_fix,
         "urgency":    urgency or (
             "Fix immediately" if risk == "HIGH" else
@@ -115,6 +120,7 @@ def _check_ssl(host: str) -> list[dict]:
             "443", "HTTPS", "MEDIUM",
             "No HTTPS detected on port 443 — web traffic is sent in plain text, visible to anyone on the network",
             "No HTTPS / SSL Not Available",
+            cwe="CWE-319",
             business_risk=(
                 "Customer passwords, contact details, and any form submissions can be read by anyone on the "
                 "same network (public wifi, ISPs, etc.), and modern browsers will actively warn visitors that "
@@ -142,6 +148,7 @@ def _check_ssl(host: str) -> list[dict]:
                 "SSL", "SSL Certificate", "HIGH",
                 "Self-signed SSL certificate — browsers show a 'Your connection is not private' warning to every visitor",
                 "Self-Signed SSL Certificate",
+                cwe="CWE-295",
                 business_risk=(
                     "Most visitors will leave the instant they see that warning, assuming the site is unsafe or "
                     "compromised — costing you sales and leads, especially on any page where customers enter "
@@ -159,6 +166,7 @@ def _check_ssl(host: str) -> list[dict]:
                 "SSL", "SSL Certificate", "HIGH",
                 "SSL certificate is expired — every visitor sees a browser security warning and many will leave immediately",
                 "Expired SSL Certificate",
+                cwe="CWE-298",
                 business_risk=(
                     "Every visitor right now is seeing a security warning, which most people read as a sign the "
                     "business is unsafe, broken, or even hacked — that's lost sales and damaged trust building up "
@@ -176,6 +184,7 @@ def _check_ssl(host: str) -> list[dict]:
                 "SSL", "SSL Certificate", "HIGH",
                 "SSL certificate is for a different domain — visitors get a browser warning saying the site can't be trusted",
                 "SSL Certificate Hostname Mismatch",
+                cwe="CWE-297",
                 business_risk=(
                     "This warning makes your business look unprofessional or compromised, and many visitors "
                     "won't proceed past it — particularly damaging on login or checkout pages where trust matters most."
@@ -192,6 +201,7 @@ def _check_ssl(host: str) -> list[dict]:
                 "SSL", "SSL Certificate", "HIGH",
                 f"SSL certificate error ({str(e)[:100]}) — visitors may see browser security warnings",
                 "SSL Certificate Error",
+                cwe="CWE-295",
                 business_risk=(
                     "Unresolved certificate problems quietly erode customer trust and can drive away traffic "
                     "before you even notice a dip in sales or inquiries."
@@ -212,6 +222,7 @@ def _check_ssl(host: str) -> list[dict]:
                     "SSL", "SSL Certificate", "HIGH",
                     f"SSL certificate expired {abs(days_left)} days ago — visitors see browser security warnings right now",
                     "SSL Certificate Expired",
+                    cwe="CWE-298",
                     business_risk=(
                         "Right now, every single visitor sees a 'Not Secure' or 'connection not private' warning — "
                         "many will assume the site is broken or unsafe and leave, which means lost business every "
@@ -224,6 +235,7 @@ def _check_ssl(host: str) -> list[dict]:
                     "SSL", "SSL Certificate", "HIGH",
                     f"SSL certificate expires in {days_left} days — website will show security errors very soon",
                     f"SSL Expiring in {days_left} Days — Urgent",
+                    cwe="CWE-298",
                     business_risk=(
                         "Once this certificate expires, every visitor will hit a security warning and many will "
                         "leave instead of buying or contacting you — handling the renewal now avoids a sudden, "
@@ -236,6 +248,7 @@ def _check_ssl(host: str) -> list[dict]:
                     "SSL", "SSL Certificate", "MEDIUM",
                     f"SSL certificate expires in {days_left} days — schedule renewal now",
                     f"SSL Expiring Soon ({days_left} Days)",
+                    cwe="CWE-298",
                     business_risk=(
                         "Not urgent today, but if this lapses without warning, visitors will suddenly start seeing "
                         "security errors and conversions can drop overnight — renewing now avoids any disruption."
@@ -247,6 +260,7 @@ def _check_ssl(host: str) -> list[dict]:
                     "SSL", "SSL Certificate", "LOW",
                     f"SSL certificate expires in {days_left} days",
                     f"SSL Renewal Due in {days_left} Days",
+                    cwe="CWE-298",
                     business_risk=(
                         "Plenty of runway here, but a forgotten renewal later means visitors will eventually hit "
                         "security warnings out of nowhere — worth a calendar reminder so it never becomes urgent."
@@ -272,6 +286,7 @@ def _check_ssl(host: str) -> list[dict]:
                         "SSL", "TLS Version", "MEDIUM",
                         f"Server accepts {ver} which is deprecated and insecure since 2020",
                         f"Outdated TLS Version Accepted ({ver})",
+                        cwe="CWE-327",
                         business_risk=(
                             "Security scanners and compliance audits (PCI-DSS, SOC 2, cyber-insurance "
                             "questionnaires, etc.) flag outdated TLS versions as a failing item, and major "
@@ -302,6 +317,7 @@ def _check_ssl(host: str) -> list[dict]:
                 f"Server negotiated a weak cipher suite ({cipher_name}, {secret_bits}-bit) — traffic encrypted "
                 f"this way has a realistic chance of being decrypted by an attacker who intercepts it",
                 "Weak SSL/TLS Cipher Suite In Use",
+                cwe="CWE-327",
                 business_risk=(
                     "An attacker who intercepts network traffic (public wifi, a compromised router, etc.) has a "
                     "real chance of decrypting it with this cipher, exposing whatever customers type — logins, "
@@ -335,6 +351,7 @@ def _check_http_headers(host: str) -> list[dict]:
                 "HTTP", "HTTPS Redirect", "MEDIUM",
                 "Visiting http:// doesn't redirect to https:// — some visitors may use an unencrypted connection without knowing",
                 "HTTP Not Redirecting to HTTPS",
+                cwe="CWE-319",
                 business_risk=(
                     "Anyone who types or clicks an http:// link is sending their activity on your site — "
                     "potentially including form data or passwords — unencrypted, where it can be read by "
@@ -371,6 +388,7 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "HSTS Header", "MEDIUM",
             "Missing Strict-Transport-Security (HSTS) — browsers aren't forced to always use HTTPS, leaving visitors open to downgrade attacks",
             "Missing HSTS Header",
+            cwe="CWE-319",
             business_risk=(
                 "An attacker on the same network as a visitor (public wifi, a compromised router, etc.) can "
                 "trick their browser into using the insecure version of your site and intercept what they type — "
@@ -391,6 +409,7 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "Clickjacking Protection", "MEDIUM",
             "Missing X-Frame-Options — your website can be embedded in an attacker's invisible iframe to trick users into unwanted actions",
             "Missing Clickjacking Protection (X-Frame-Options)",
+            cwe="CWE-1021",
             business_risk=(
                 "An attacker could trick your customers into clicking hidden buttons — like 'change password' or "
                 "'confirm purchase' — without realizing it, potentially leading to account takeovers or "
@@ -410,6 +429,7 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "MIME Sniffing", "LOW",
             "Missing X-Content-Type-Options — browsers may guess file types incorrectly, which can enable content injection",
             "Missing MIME Sniffing Protection",
+            cwe="CWE-693",
             business_risk=(
                 "This is a minor gap on its own, but it slightly raises the odds that a malicious file could be "
                 "misread as something else by a visitor's browser, helping a separate attack succeed."
@@ -427,6 +447,7 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "Content Security Policy", "MEDIUM",
             "Missing Content-Security-Policy (CSP) — no browser protection against cross-site scripting attacks that steal customer data",
             "Missing Content-Security-Policy (CSP)",
+            cwe="CWE-693",
             business_risk=(
                 "If an attacker ever manages to slip malicious script onto your site (e.g. through a vulnerable "
                 "plugin or a comment field), there's nothing in place to stop it from running and stealing "
@@ -446,6 +467,7 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "Referrer Policy", "LOW",
             "Missing Referrer-Policy — page URLs (which may include sensitive data) are shared with third-party sites your pages link to",
             "Missing Referrer-Policy Header",
+            cwe="CWE-16",
             business_risk=(
                 "If any of your page addresses contain sensitive details (like a password-reset token or account "
                 "ID), that information could leak to outside sites your pages link to — a small but easily "
@@ -463,6 +485,7 @@ def _check_http_headers(host: str) -> list[dict]:
             "HTTPS", "Permissions Policy", "LOW",
             "Missing Permissions-Policy — browser features like camera, microphone, and location aren't restricted for embedded third-party scripts",
             "Missing Permissions-Policy Header",
+            cwe="CWE-693",
             business_risk=(
                 "If you ever embed third-party ads, widgets, or analytics scripts, they could request a "
                 "visitor's camera, microphone, or location without you intending to allow it — an avoidable "
@@ -484,6 +507,7 @@ def _check_http_headers(host: str) -> list[dict]:
             f"Server header reveals exact software version ({server}) — attackers search vulnerability databases for that version",
             "Server Software Version Exposed",
             version=server,
+            cwe="CWE-200",
             business_risk=(
                 "Attackers use that exact version number to look up known, public vulnerabilities for that "
                 "specific software release — making it easier to plan a targeted attack instead of guessing blind."
@@ -504,6 +528,7 @@ def _check_http_headers(host: str) -> list[dict]:
             f"X-Powered-By header discloses your tech stack ({powered_by}) — makes targeted attacks easier",
             "Technology Stack Disclosed (X-Powered-By)",
             version=powered_by,
+            cwe="CWE-200",
             business_risk=(
                 "Knowing your exact tech stack lets an attacker focus their effort on vulnerabilities specific to "
                 "that platform, slightly increasing the odds of being targeted compared to a generic, "
@@ -536,10 +561,16 @@ def _check_http_headers(host: str) -> list[dict]:
                 missing.append("SameSite")
             if missing:
                 risk = "MEDIUM" if ("Secure" in missing or "HttpOnly" in missing) else "LOW"
+                # CWE per missing flag — verified against cwe.mitre.org: Secure -> CWE-614,
+                # HttpOnly -> CWE-1004, SameSite -> CWE-1275. Built dynamically since a
+                # single cookie finding can be missing more than one flag at once.
+                _cookie_cwe = {"Secure": "CWE-614", "HttpOnly": "CWE-1004", "SameSite": "CWE-1275"}
+                cookie_cwe = ", ".join(_cookie_cwe[m] for m in missing)
                 findings.append(_finding(
                     "HTTPS", "Cookie Security", risk,
                     f"Cookie '{cookie_name}' is missing the {', '.join(missing)} flag(s), making it easier to steal or misuse",
                     f"Insecure Cookie Flags ({cookie_name})",
+                    cwe=cookie_cwe,
                     business_risk=(
                         "Without these flags, a cookie is easier to steal through cross-site scripting or to "
                         "intercept over an unencrypted connection — and a stolen session cookie can let an "
@@ -585,6 +616,7 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                         "SPF record uses '+all' — anyone on the internet can send emails as your domain, the record does nothing",
                         "SPF Record Too Permissive (+all)",
                         category="dns",
+                        cwe="CWE-290",
                         business_risk=(
                             "Scammers can send phishing or fraud emails that look exactly like they came from "
                             "your business, and recipients have no way to tell them apart from the real thing — "
@@ -603,6 +635,7 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                         "SPF record uses '?all' (neutral) — spoofed emails aren't blocked or flagged",
                         "SPF Record Neutral — Not Enforced",
                         category="dns",
+                        cwe="CWE-290",
                         business_risk=(
                             "Phishing emails impersonating your business can land in customers' inboxes without "
                             "any warning label, raising the chance someone falls for a scam and blames your "
@@ -620,6 +653,7 @@ def _check_dns_dnspython(host: str) -> list[dict]:
             "No SPF record — anyone can send emails pretending to be from your domain, used for phishing scams targeting your customers",
             "Missing SPF Record — Email Spoofing Possible",
             category="dns",
+            cwe="CWE-290",
             business_risk=(
                 "Without SPF, scammers can convincingly impersonate your business by email — which can lead to "
                 "customers being defrauded, your domain's email reputation being damaged, and your own real "
@@ -652,6 +686,7 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                         "DMARC is set to monitor-only (p=none) — phishing emails pretending to be you aren't blocked, just reported",
                         "DMARC Monitor-Only (p=none) — Not Enforced",
                         category="dns",
+                        cwe="CWE-290",
                         business_risk=(
                             "Phishing emails pretending to be your business can still reach customers' inboxes "
                             "today — you'll get reports about it after the fact, but nothing actually stops the "
@@ -674,6 +709,7 @@ def _check_dns_dnspython(host: str) -> list[dict]:
             "No DMARC record — your domain has zero email authentication enforcement, making it trivial to impersonate your business",
             "Missing DMARC Record — Email Impersonation Risk",
             category="dns",
+            cwe="CWE-290",
             business_risk=(
                 "This makes it significantly easier for scammers to send convincing fake emails 'from' your "
                 "business — a common tactic in invoice fraud and phishing — which can directly cost your "
@@ -705,6 +741,7 @@ def _check_dns_dnspython(host: str) -> list[dict]:
             "No DKIM signature detected — outgoing emails aren't cryptographically signed, making spoofing and tampering easier",
             "DKIM Not Detected",
             category="dns",
+            cwe="CWE-290",
             business_risk=(
                 "Email providers increasingly use DKIM as a trust signal — without it, your legitimate emails "
                 "are more likely to be flagged as suspicious or land in spam, hurting delivery of invoices, "
@@ -740,6 +777,7 @@ def _check_dns_nslookup(host: str) -> list[dict]:
             "No SPF record — anyone can send emails pretending to be from your domain",
             "Missing SPF Record — Email Spoofing Possible",
             category="dns",
+            cwe="CWE-290",
             business_risk=(
                 "Scammers can use this gap to send convincing fake emails that appear to come from your "
                 "business, putting your customers at risk and potentially damaging your reputation."
@@ -756,6 +794,7 @@ def _check_dns_nslookup(host: str) -> list[dict]:
             "No DMARC record — attackers can impersonate your business in emails",
             "Missing DMARC Record — Email Impersonation Risk",
             category="dns",
+            cwe="CWE-290",
             business_risk=(
                 "This makes email scams impersonating your business easier to pull off, which can cost "
                 "customers money and erode trust in your brand."
