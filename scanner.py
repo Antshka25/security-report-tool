@@ -216,8 +216,22 @@ def build_scan_summary(scan_result: dict, extra_findings: list = None) -> dict:
     # Count only open network ports (not web/dns checks) for display
     open_ports = [p for p in ports if str(p.get("port", "")).isdigit()]
 
-    # Overall risk score 1-10
-    score = min(10, len(high) * 2 + len(medium))
+    # Overall risk score 1-10. Findings are weighted by exploitability, not just
+    # counted flat — otherwise a stack of configuration-hygiene gaps (missing
+    # SPF/DMARC/DKIM records, missing security headers) racks up the same points
+    # per finding as an actually exploitable issue (an open database port, an
+    # expired cert, a leaked secret), which pushes routine hygiene findings into
+    # a CRITICAL/9-10 score that overstates the real risk. Hygiene-class findings
+    # (web_checks.py tags these "HTTPS"/"HTTP"/"DNS") count at half weight; ports,
+    # SSL/TLS failures, domain-expiration, and vuln/secret/CVE findings keep full
+    # weight since those represent live or near-term exposure.
+    _HYGIENE_TAGS = {"HTTPS", "HTTP", "DNS"}
+
+    def _weight(p):
+        base = 2 if p["risk"] == "HIGH" else 1 if p["risk"] == "MEDIUM" else 0
+        return base / 2 if str(p.get("port", "")) in _HYGIENE_TAGS else base
+
+    score = min(10, round(sum(_weight(p) for p in ports)))
     if score == 0 and ports:
         score = 2  # at least some exposure
 
