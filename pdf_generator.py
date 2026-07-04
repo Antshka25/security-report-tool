@@ -4,6 +4,7 @@ Designed to look like a paid product ($50-200 price point).
 """
 import io
 from datetime import datetime
+from xml.sax.saxutils import escape as _xml_escape
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.units import inch
@@ -75,6 +76,19 @@ def _styles():
     }
 
 
+def _esc(text) -> str:
+    """Escape dynamic/AI-generated text before it goes into a ReportLab
+    Paragraph. Paragraph text is parsed as a small pseudo-XML markup language
+    (<b>, <font>, <br/>, ...) — an unescaped '<'/'>'/'&' in AI-written prose
+    or scraped page content (e.g. an XSS explanation that mentions a literal
+    <script> tag) gets misread as a malformed tag and crashes PDF generation
+    with a paraparser syntax error. Escape the raw value, then wrap it in our
+    own literal markup as needed."""
+    if not text:
+        return text or ""
+    return _xml_escape(str(text))
+
+
 def _divider(color=C_BORDER):
     return HRFlowable(width="100%", thickness=1, color=color, spaceAfter=8, spaceBefore=4)
 
@@ -134,8 +148,8 @@ def build_pdf(report: dict) -> bytes:
     header_data = [[
         Paragraph(f"<font color='#7c3aed'>■</font> SECURITY REPORT", S["title"]),
         Paragraph(
-            f"<font color='#94a3b8'>{meta.get('business_name', 'Your Business')}</font><br/>"
-            f"<font size='9' color='#4a5568'>{meta.get('scan_date', '')} · {meta.get('scan_time', '')}</font>",
+            f"<font color='#94a3b8'>{_esc(meta.get('business_name', 'Your Business'))}</font><br/>"
+            f"<font size='9' color='#4a5568'>{_esc(meta.get('scan_date', ''))} · {_esc(meta.get('scan_time', ''))}</font>",
             ParagraphStyle("rh", fontName="Helvetica", fontSize=11,
                            textColor=C_MUTED, alignment=TA_RIGHT)
         )
@@ -154,33 +168,15 @@ def build_pdf(report: dict) -> bytes:
     risk_label = report.get("risk_label", "LOW")
     risk_col   = RISK_COLORS.get(risk_label, C_LOW)
 
-    score_section = [[
-        _score_gauge(score, risk_label),
-        Table([
-            [Paragraph("TARGET", S["label"])],
-            [Paragraph(meta.get("target", ""), S["h2"])],
-            [Paragraph(f"Open ports: <b>{meta.get('total_ports', 0)}</b>", S["body_muted"])],
-            [Paragraph(report.get("risk_explanation", ""), S["body_muted"])],
-        ], colWidths=[W * 0.75])
-    ]]
-    score_table = Table(score_section, colWidths=[100, W - 100])
-    score_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (1, 0), (1, 0), 16),
-    ]))
-    story.append(score_section[0][0])  # gauge
-    story.append(Spacer(1, -90))        # overlay trick — use a two-col table instead
-    story = story[:-2]  # undo the overlay hack
-
     meta_score_data = [[_score_gauge(score, risk_label),
                         [Paragraph("SCAN TARGET", S["label"]),
-                         Paragraph(f"<b>{meta.get('target', '')}</b>",
+                         Paragraph(f"<b>{_esc(meta.get('target', ''))}</b>",
                                    ParagraphStyle("tgt", fontName="Helvetica-Bold",
                                                   fontSize=14, textColor=C_WHITE, spaceAfter=4)),
                          Paragraph(f"Open ports detected: <b>{meta.get('total_ports', 0)}</b>" +
-                                   (f" &nbsp;·&nbsp; Public IP: <b>{meta.get('ip')}</b>" if meta.get('ip') else ""),
+                                   (f" &nbsp;·&nbsp; Public IP: <b>{_esc(meta.get('ip'))}</b>" if meta.get('ip') else ""),
                                    S["body_muted"]),
-                         Paragraph(report.get("risk_explanation", ""), S["body_muted"])]]]
+                         Paragraph(_esc(report.get("risk_explanation", "")), S["body_muted"])]]]
     ms_table = Table(meta_score_data, colWidths=[100, W - 108])
     ms_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -197,13 +193,13 @@ def build_pdf(report: dict) -> bytes:
     # ── Executive Summary ─────────────────────────────────────────────────────
     story.append(Paragraph("EXECUTIVE SUMMARY", S["h2"]))
     story.append(_divider())
-    story.append(Paragraph(report.get("executive_summary", ""), S["body"]))
+    story.append(Paragraph(_esc(report.get("executive_summary", "")), S["body"]))
     story.append(Spacer(1, 8))
 
     # Positive findings
     pos = report.get("positive_findings", "")
     if pos:
-        pos_data = [[Paragraph("✓ " + pos,
+        pos_data = [[Paragraph("✓ " + _esc(pos),
                                ParagraphStyle("pos", fontName="Helvetica",
                                               fontSize=10, textColor=C_LOW, leading=14))]]
         pos_table = Table(pos_data, colWidths=[W])
@@ -229,7 +225,7 @@ def build_pdf(report: dict) -> bytes:
                 Paragraph(f"<b>{i}</b>",
                           ParagraphStyle("rn", fontName="Helvetica-Bold",
                                          fontSize=13, textColor=C_ACCENT, alignment=TA_CENTER)),
-                Paragraph(rec, S["body"])
+                Paragraph(_esc(rec), S["body"])
             ]]
             rec_table = Table(rec_data, colWidths=[28, W - 36])
             rec_table.setStyle(TableStyle([
@@ -254,10 +250,10 @@ def build_pdf(report: dict) -> bytes:
 
             # Finding header
             header_data = [[
-                Paragraph(f"<b>{title}</b>",
+                Paragraph(f"<b>{_esc(title)}</b>",
                           ParagraphStyle("fh", fontName="Helvetica-Bold",
                                          fontSize=11, textColor=C_WHITE)),
-                Paragraph(f"Port {f.get('port', '?')} · {f.get('service', '')}",
+                Paragraph(f"Port {_esc(f.get('port', '?'))} · {_esc(f.get('service', ''))}",
                           ParagraphStyle("fp", fontName="Helvetica",
                                          fontSize=9, textColor=C_MUTED, alignment=TA_RIGHT)),
                 _risk_badge(sev, 72),
@@ -285,7 +281,7 @@ def build_pdf(report: dict) -> bytes:
                 if val:
                     rows.append([
                         Paragraph(label, S["label"]),
-                        Paragraph(val, ParagraphStyle(f"fv_{key}", fontName="Helvetica",
+                        Paragraph(_esc(val), ParagraphStyle(f"fv_{key}", fontName="Helvetica",
                                                        fontSize=10, textColor=color, leading=14))
                     ])
 
@@ -293,16 +289,16 @@ def build_pdf(report: dict) -> bytes:
             if urgency:
                 rows.append([
                     Paragraph("URGENCY", S["label"]),
-                    Paragraph(f"<b>{urgency}</b>",
+                    Paragraph(f"<b>{_esc(urgency)}</b>",
                               ParagraphStyle("urg", fontName="Helvetica-Bold",
                                              fontSize=10, textColor=col))
                 ])
 
             cwe = f.get("cwe", "")
             if cwe:
-                cwe_name = f.get("cwe_name", "")
-                cwe_desc = f.get("cwe_desc", "")
-                cwe_text = f"{cwe} — {cwe_name}" if cwe_name else cwe
+                cwe_name = _esc(f.get("cwe_name", ""))
+                cwe_desc = _esc(f.get("cwe_desc", ""))
+                cwe_text = f"{_esc(cwe)} — {cwe_name}" if cwe_name else _esc(cwe)
                 if cwe_desc:
                     cwe_text += f"<br/>{cwe_desc}"
                 rows.append([
@@ -351,15 +347,15 @@ def build_pdf(report: dict) -> bytes:
             sev = f.get("severity", "INFO")
             col = SEVERITY_COLORS.get(sev, C_INFO)
             tbl_data.append([
-                Paragraph(f.get("port", "?"),
+                Paragraph(_esc(f.get("port", "?")),
                           ParagraphStyle("tp", fontName="Helvetica-Bold",
                                          fontSize=9, textColor=C_WHITE)),
-                Paragraph(f.get("service", ""),
+                Paragraph(_esc(f.get("service", "")),
                           ParagraphStyle("ts", fontName="Helvetica",
                                          fontSize=9, textColor=C_WHITE)),
                 Paragraph(sev, ParagraphStyle("tr", fontName="Helvetica-Bold",
                                                fontSize=9, textColor=col)),
-                Paragraph(f.get("what_it_is", "")[:100],
+                Paragraph(_esc(f.get("what_it_is", "")[:100]),
                           ParagraphStyle("td", fontName="Helvetica",
                                          fontSize=9, textColor=C_MUTED, leading=12)),
             ])
@@ -374,7 +370,7 @@ def build_pdf(report: dict) -> bytes:
     if next_steps:
         story.append(Paragraph("NEXT STEPS", S["h2"]))
         story.append(_divider())
-        ns_data = [[Paragraph("→ " + next_steps,
+        ns_data = [[Paragraph("→ " + _esc(next_steps),
                                ParagraphStyle("ns", fontName="Helvetica",
                                               fontSize=10, textColor=C_WHITE, leading=15))]]
         ns_table = Table(ns_data, colWidths=[W])
@@ -392,9 +388,9 @@ def build_pdf(report: dict) -> bytes:
     # ── Disclaimer ────────────────────────────────────────────────────────────
     story.append(_divider())
     story.append(Paragraph(
-        report.get("disclaimer",
+        _esc(report.get("disclaimer",
                    "This report is for informational purposes only. "
-                   "Consult a qualified cybersecurity professional for a complete assessment."),
+                   "Consult a qualified cybersecurity professional for a complete assessment.")),
         S["small"]))
 
     # ── Page background + footer ──────────────────────────────────────────────
