@@ -43,6 +43,10 @@ def run_web_checks(host: str) -> list[dict]:
         findings.extend(_check_http_headers(host))
     except Exception:
         pass
+    try:
+        findings.extend(_check_admin_panels(host))
+    except Exception:
+        pass
     if not _is_ip(host):
         try:
             findings.extend(_check_dns(host))
@@ -50,6 +54,14 @@ def run_web_checks(host: str) -> list[dict]:
             pass
         try:
             findings.extend(_check_domain_expiration(host))
+        except Exception:
+            pass
+        try:
+            findings.extend(_check_dkim_key_size(host))
+        except Exception:
+            pass
+        try:
+            findings.extend(_check_subdomain_takeover(host))
         except Exception:
             pass
     findings.sort(key=lambda f: RISK_ORDER.get(f.get("risk", "INFO"), 99))
@@ -1063,4 +1075,343 @@ def _check_domain_expiration(host: str) -> list[dict]:
         ))
 
     return findings
-                        
+
+
+# ── Open admin / sensitive panel probing ──────────────────────────────────────
+
+# Paths to probe, in order. Tuples of (path, title, severity, body_keywords).
+# body_keywords: if any appear in the response body it's more likely a real panel;
+# empty list means a 200 status alone is sufficient (e.g. .git/HEAD has a
+# distinctive body regardless of keywords).
+_ADMIN_PATHS = [
+    ("/.git/HEAD",          "Exposed .git Directory",          "HIGH",
+     ["ref: refs/heads/"]),
+    ("/wp-admin/",          "WordPress Admin Panel Exposed",    "HIGH",
+     ["wordpress", "wp-login", "log in", "username", "password"]),
+    ("/phpmyadmin/",        "phpMyAdmin Exposed",               "HIGH",
+     ["phpmyadmin", "mysql", "sql", "database"]),
+    ("/phpmyadmin",         "phpMyAdmin Exposed",               "HIGH",
+     ["phpmyadmin", "mysql", "sql", "database"]),
+    ("/admin/",             "Admin Panel Exposed",              "HIGH",
+     ["login", "admin", "dashboard", "username", "password", "sign in"]),
+    ("/admin",              "Admin Panel Exposed",              "HIGH",
+     ["login", "admin", "dashboard", "username", "password", "sign in"]),
+    ("/administrator/",     "Admin Panel Exposed",              "HIGH",
+     ["login", "admin", "dashboard", "username", "password"]),
+    ("/admin.php",          "Admin Panel Exposed",              "HIGH",
+     ["login", "admin", "dashboard", "username", "password"]),
+    ("/login",              "Admin Login Page Exposed",         "MEDIUM",
+     ["admin", "dashboard", "control panel", "management"]),
+    ("/dashboard",          "Admin Dashboard Exposed",          "HIGH",
+     ["admin", "dashboard", "control panel", "users", "settings"]),
+    ("/cpanel/",            "cPanel Exposed",                   "HIGH",
+     ["cpanel", "webmail", "hosting", "control panel"]),
+    ("/server-status",      "Apache Server Status Exposed",     "HIGH",
+     ["apache", "server status", "requests currently being processed"]),
+    ("/server-info",        "Apache Server Info Exposed",       "MEDIUM",
+     ["apache", "server information", "module"]),
+    ("/elmah.axd",          "ELMAH Error Log Exposed",          "HIGH",
+     ["elmah", "error log", "exception"]),
+]
+
+_ADMIN_DEDUP: set = set()  # avoid duplicate titles within a single scan
+
+
+def _check_admin_panels(host: str) -> list[dict]:
+    if not HAS_HTTPX:
+        return []
+
+    findings = []
+    seen_titles: set = set()
+
+    # Fetch the homepage body once so we can detect catch-all 200 responses.
+    homepage_text = ""
+    try:
+        for scheme in ("https", "http"):
+            r = httpx.get(f"{scheme}://{host}", timeout=8,
+                          follow_redirects=True, verify=False)
+            if r.status_code == 200:
+                homepage_text = r.text[:4000].lower()
+                break
+    except Exception:
+        pass
+
+    for path, title, risk, keywords in _ADMIN_PATHS:
+        if title in seen_titles:
+            continue
+        try:
+            url = f"https://{host}{path}"
+            r = httpx.get(url, timeout=8, follow_redirects=False, verify=False)
+
+            if r.status_code not in (200, 401, 403):
+                continue
+
+            body = r.text[:3000].lower()
+
+            # 401/403 is strong signal — access is restricted, meaning the resource exists
+            access_restricted = r.status_code in (401, 403)
+
+            # For 200: require at least one keyword to avoid false positives from catch-alls
+            if r.status_code == 200:
+                if keywords and not any(kw in body for kw in keywords):
+                    continue
+                # Skip if the body is basically identical to the homepage (catch-all route)
+                if homepage_text and len(body) > 100:
+                    overlap = sum(1 for kw in body.split()[:80] if kw in homepage_text)
+                    if overlap > 60:
+                        continue
+
+            seen_titles.add(title)
+
+            status_note = "is accessible without authentication" if access_restricted is False else \
+                          "returns a restricted-access response (401/403) confirming the path exists"
+
+            findings.append(_finding(
+                "HTTPS", title, risk,
+                f"The path {path} {status_note} — this exposes sensitive administration functionality to anyone on the internet",
+                title,
+                category="web",
+                cwe="CWE-284",
+                business_risk=(
+                    f"Publicly reachable admin panels are a primary target for automated attacks. "
+                    f"An attacker who can reach {path} can attempt brute-force login, exploit known "
+                    f"vulnerabilities in the admin software, or leverage it as a stepping stone to full "
+                    f"server compromise — without needing any insider knowledge of the site."
+                ),
+                real_world_example=(
+                    f"Example: Automated bots constantly scan the internet for paths like {path}. A business "
+                    f"that left a default admin URL accessible was compromised when a bot found it, brute-forced "
+                    f"a weak password in minutes, and installed backdoor malware — all without any human attacker "
+                    f"being involved."
+                ),
+                how_to_fix=(
+                    f"Restrict access to {path} by IP allowlist, move it to a non-standard path, or disable it "
+                    f"if not needed. Nginx: 'location ^~ {path} {{ allow YOUR_IP; deny all; }}'. "
+                    f"Also ensure strong, unique credentials are set for any admin accounts, and enable "
+                    f"multi-factor authentication where supported."
+                )
+            ))
+        except Exception:
+            continue
+
+    return findings
+
+
+# ── DKIM key size check ───────────────────────────────────────────────────────
+
+_DKIM_SELECTORS = (
+    "default", "google", "mail", "dkim", "k1", "k2",
+    "selector1", "selector2", "s1", "s2", "zoho", "mandrill",
+    "resend", "email", "smtp",
+)
+
+
+def _check_dkim_key_size(host: str) -> list[dict]:
+    """Resolve existing DKIM records and flag undersized keys (< 2048 bits)."""
+    if not HAS_DNS:
+        return []
+
+    import base64 as _b64
+
+    findings = []
+
+    for selector in _DKIM_SELECTORS:
+        try:
+            answers = _dns_resolver.resolve(
+                f"{selector}._domainkey.{host}", "TXT", lifetime=4)
+        except Exception:
+            continue
+
+        # Found a DKIM record — parse the p= field (public key in base64 DER)
+        for rdata in answers:
+            txt = "".join(
+                s.decode("utf-8", errors="replace") if isinstance(s, bytes) else s
+                for s in rdata.strings
+            )
+            # p= is the base64-encoded public key (SubjectPublicKeyInfo DER for RSA)
+            m = re.search(r"p=([A-Za-z0-9+/=]+)", txt)
+            if not m:
+                continue
+            try:
+                key_bytes = _b64.b64decode(m.group(1))
+            except Exception:
+                continue
+
+            # Rough RSA key-size estimation from SPKI DER byte length:
+            #   512-bit key  → ~74  bytes
+            #   1024-bit key → ~162 bytes
+            #   2048-bit key → ~294 bytes
+            key_len = len(key_bytes)
+            if key_len < 100:
+                est_bits = 512
+                risk = "HIGH"
+                urgency = "Fix immediately"
+                reason = (
+                    f"DKIM key for selector '{selector}' appears to be approximately {est_bits} bits — "
+                    f"this key size is cryptographically broken and can be factored by attackers, "
+                    f"allowing them to forge valid DKIM signatures on emails impersonating your domain."
+                )
+                fix = (
+                    f"Replace the DKIM key for selector '{selector}' with a 2048-bit RSA key immediately. "
+                    f"Generate a new key through your email provider (Google Workspace: Admin > Gmail > "
+                    f"Authenticate email; Microsoft 365: Defender > Email auth > DKIM), update the DNS TXT "
+                    f"record, and delete the old weak key."
+                )
+            elif key_len < 210:
+                est_bits = 1024
+                risk = "MEDIUM"
+                urgency = "Fix within 1 week"
+                reason = (
+                    f"DKIM key for selector '{selector}' appears to be approximately {est_bits} bits — "
+                    f"1024-bit RSA keys are considered weak by modern standards and NIST has deprecated them. "
+                    f"A well-resourced attacker could factor this key, breaking your email authentication."
+                )
+                fix = (
+                    f"Upgrade the DKIM key for selector '{selector}' to 2048 bits. Generate a new key "
+                    f"through your email provider, update the DNS TXT record to the new public key, "
+                    f"and retire the old 1024-bit key."
+                )
+            else:
+                # Key size is fine — no finding
+                continue
+
+            findings.append(_finding(
+                "DNS", "DKIM Key Strength", risk,
+                reason,
+                f"Weak DKIM Key — {est_bits}-bit RSA (selector: {selector})",
+                category="dns",
+                cwe="CWE-326",
+                business_risk=(
+                    "A forged DKIM signature lets an attacker send phishing or fraud emails that "
+                    "cryptographically appear to come from your domain — bypassing email filters that "
+                    "rely on DKIM as a trust signal, and making impersonation emails indistinguishable "
+                    "from your real ones."
+                ),
+                real_world_example=(
+                    "Example: A security researcher demonstrated in a published study that 512-bit DKIM keys "
+                    "could be factored in under 72 hours using cloud computing resources costing less than "
+                    "$100 — allowing anyone with that capability to forge valid email signatures for the "
+                    "affected domain."
+                ),
+                how_to_fix=fix,
+                urgency=urgency,
+            ))
+            break  # one finding per selector is enough
+
+    return findings
+
+
+# ── Subdomain takeover detection ──────────────────────────────────────────────
+
+# Map of CNAME target patterns → (service_name, takeover_indicator_strings)
+# The indicator strings are checked in the HTTP response body of the CNAME target.
+_TAKEOVER_SERVICES = {
+    "github.io":              ("GitHub Pages",  ["there isn't a github pages site here",
+                                                  "for root urls, you can only use custom domains"]),
+    "herokuapp.com":          ("Heroku",         ["no such app", "heroku | no such app",
+                                                   "there's nothing here, yet."]),
+    "herokudns.com":          ("Heroku",         ["no such app", "heroku | no such app"]),
+    "s3.amazonaws.com":       ("AWS S3",         ["nosuchbucket", "the specified bucket does not exist"]),
+    "s3-website":             ("AWS S3 Website", ["nosuchbucket", "the specified bucket does not exist",
+                                                   "nosuchkey"]),
+    "cloudfront.net":         ("AWS CloudFront", ["the request could not be satisfied",
+                                                   "bad request"]),
+    "fastly.net":             ("Fastly",         ["fastly error: unknown domain",
+                                                   "please check that this domain has been added"]),
+    "pantheonsite.io":        ("Pantheon",       ["the gods are in error", "404 error unknown site"]),
+    "ghost.io":               ("Ghost",          ["domain does not exist", "site not found"]),
+    "surge.sh":               ("Surge",          ["project not found"]),
+    "bitbucket.io":           ("Bitbucket",      ["repository not found", "404 not found"]),
+    "azurewebsites.net":      ("Azure",          ["404 web site not found", "this web app is stopped"]),
+    "cloudapp.azure.com":     ("Azure",          ["404 web site not found"]),
+    "trafficmanager.net":     ("Azure Traffic Manager", ["404"]),
+    "azureedge.net":          ("Azure CDN",      ["404"]),
+    "zendesk.com":            ("Zendesk",        ["this help center no longer exists",
+                                                   "uh oh. it looks like the help center"]),
+    "helpscoutdocs.com":      ("HelpScout Docs", ["no settings were found for this company"]),
+    "readme.io":              ("ReadMe",         ["project doesnt exist", "404 to serial"]),
+    "cargo.site":             ("Cargo",          ["404 not found"]),
+    "webflow.io":             ("Webflow",        ["the page you are looking for doesn't exist"]),
+    "fly.dev":                ("Fly.io",         ["404", "not found"]),
+}
+
+_SUBDOMAINS_TO_CHECK = (
+    "www", "mail", "api", "dev", "staging", "blog", "app", "test",
+    "portal", "shop", "store", "cdn", "static", "assets", "media",
+    "docs", "help", "support",
+)
+
+
+def _check_subdomain_takeover(host: str) -> list[dict]:
+    """Check common subdomains for dangling CNAME records pointing to unclaimed cloud services."""
+    if not HAS_DNS or not HAS_HTTPX:
+        return []
+
+    findings = []
+
+    for sub in _SUBDOMAINS_TO_CHECK:
+        fqdn = f"{sub}.{host}"
+        try:
+            answers = _dns_resolver.resolve(fqdn, "CNAME", lifetime=4)
+        except Exception:
+            continue  # no CNAME → skip
+
+        for rdata in answers:
+            cname_target = str(rdata.target).rstrip(".").lower()
+
+            # Find matching service
+            matched_service = None
+            matched_indicators = []
+            for pattern, (svc_name, indicators) in _TAKEOVER_SERVICES.items():
+                if pattern in cname_target:
+                    matched_service = svc_name
+                    matched_indicators = indicators
+                    break
+
+            if not matched_service:
+                continue  # CNAME to unknown service — skip
+
+            # Confirm the service actually serves a "not found / unclaimed" response
+            try:
+                r = httpx.get(f"https://{fqdn}", timeout=8,
+                              follow_redirects=True, verify=False)
+                body = r.text[:2000].lower()
+                confirmed = any(ind in body for ind in matched_indicators)
+            except Exception:
+                # Connection failed entirely — the CNAME dangling is itself a signal
+                confirmed = True
+
+            if not confirmed:
+                continue
+
+            findings.append(_finding(
+                "DNS", "Subdomain Takeover Risk", "HIGH",
+                (
+                    f"{fqdn} has a CNAME record pointing to {cname_target} ({matched_service}), "
+                    f"but that service/resource is unclaimed — an attacker can register it and "
+                    f"serve content from your subdomain."
+                ),
+                f"Subdomain Takeover Risk — {fqdn}",
+                category="dns",
+                cwe="CWE-284",
+                business_risk=(
+                    f"An attacker who claims the abandoned {matched_service} resource at {cname_target} "
+                    f"instantly controls {fqdn} — they can host phishing pages that appear to be part of "
+                    f"your site, steal session cookies from visitors, or send emails through a subdomain "
+                    f"that your customers trust."
+                ),
+                real_world_example=(
+                    f"Example: A company forgot to remove a CNAME record for a decommissioned {matched_service} "
+                    f"deployment. An attacker claimed the abandoned resource for free, then hosted a convincing "
+                    f"'reset your password' phishing page on the company's own subdomain — harvesting "
+                    f"credentials from customers who saw the legitimate-looking URL."
+                ),
+                how_to_fix=(
+                    f"Either (a) delete the DNS CNAME record for {fqdn} if the subdomain is no longer needed, "
+                    f"or (b) recreate the {matched_service} resource so the CNAME is no longer dangling. "
+                    f"Log into your DNS provider and remove the CNAME for '{sub}' pointing to {cname_target}."
+                )
+            ))
+            break  # one finding per subdomain
+
+    return findings
