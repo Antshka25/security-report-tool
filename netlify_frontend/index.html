@@ -260,6 +260,20 @@
       gap: 0.4rem;
     }
 
+    .scan-error {
+      display: none;
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--danger);
+    }
+
+    .scan-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
     .scan-authorize {
       margin-top: 0.7rem;
       font-size: 0.78rem;
@@ -824,13 +838,14 @@
     <span class="scan-label">// Enter your business website</span>
     <div class="input-row">
       <input class="url-input" id="scan-input" type="text" placeholder="yourbusiness.com" autocomplete="off"/>
-      <button class="scan-btn" id="scan-btn" onclick="startScan()">Scan Now →</button>
+      <button class="scan-btn" id="scan-btn" disabled>Scan Now →</button>
     </div>
     <div class="scan-authorize">
       <input type="checkbox" id="scan-authorize-checkbox"/>
       <label for="scan-authorize-checkbox">I own this website or am authorized to scan it.</label>
     </div>
     <p class="scan-note">🔒 Your first scan is completely free. No credit card required.</p>
+    <p class="scan-error" id="scan-error"></p>
 
     <!-- Terminal progress -->
     <div class="scan-progress" id="scanning-section">
@@ -928,7 +943,7 @@
         <li>Plain-English explanations</li>
         <li>Risk priority ratings</li>
       </ul>
-      <button class="btn-secondary" onclick="document.getElementById('urlInput').focus()">Get Free Scan</button>
+      <button class="btn-secondary" onclick="document.getElementById('scan-input').focus(); window.scrollTo({top:0,behavior:'smooth'})">Get Free Scan</button>
     </div>
     <div class="plan featured reveal">
       <div class="plan-badge">MOST POPULAR</div>
@@ -951,7 +966,7 @@
 <div class="cta-section">
   <h2>Your business deserves to know where it stands</h2>
   <p>Free scan. No credit card. Report in your inbox in minutes.</p>
-  <button class="scan-btn" style="font-size:1rem; padding: 1rem 2.5rem;" onclick="document.getElementById('urlInput').focus(); window.scrollTo({top:0,behavior:'smooth'})">
+  <button class="scan-btn" style="font-size:1rem; padding: 1rem 2.5rem;" onclick="document.getElementById('scan-input').focus(); window.scrollTo({top:0,behavior:'smooth'})">
     Run Your Free Scan →
   </button>
 </div>
@@ -961,29 +976,6 @@
   <p>© 2026 RAPIDVULN</p>
   <p>rapidvuln.com · Built for small businesses. Powered by real security tools.</p>
 </footer>
-
-<!-- EMAIL MODAL -->
-<div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal()">✕</button>
-    <h3>Get your full report</h3>
-    <p>Enter your email and we'll send the complete PDF security report within minutes.</p>
-    <div class="form-group">
-      <label>YOUR NAME</label>
-      <input type="text" placeholder="Jane Smith"/>
-    </div>
-    <div class="form-group">
-      <label>BUSINESS EMAIL</label>
-      <input type="email" placeholder="jane@yourbusiness.com"/>
-    </div>
-    <div class="form-group">
-      <label>BUSINESS NAME</label>
-      <input type="text" placeholder="Smith & Associates"/>
-    </div>
-    <button class="btn-primary" style="width:100%; margin-top:0.5rem;" onclick="submitEmail()">Send My Report →</button>
-    <p style="text-align:center; margin-top:1rem; margin-bottom:0;">No spam. Unsubscribe anytime.</p>
-  </div>
-</div>
 
 <script src="script.js"></script>
 <script>
@@ -998,13 +990,16 @@
     const bar = document.querySelector('.progress-bar');
     if (bar) bar.style.width = '0%';
   }
-  function closeModal() {
-    const m = document.getElementById('modalOverlay');
-    if (m) m.classList.remove('active');
-  }
-  function closeModalOutside(e) {
-    if (e.target === document.getElementById('modalOverlay')) closeModal();
-  }
+  // Gate the scan button on the authorization checkbox (no click until checked)
+  (function () {
+    const checkbox = document.getElementById('scan-authorize-checkbox');
+    const btn = document.getElementById('scan-btn');
+    if (checkbox && btn) {
+      const sync = () => { btn.disabled = !checkbox.checked; };
+      checkbox.addEventListener('change', sync);
+      sync();
+    }
+  })();
 
   // Nav shadow on scroll
   window.addEventListener('scroll', () => {

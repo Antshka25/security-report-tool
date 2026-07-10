@@ -162,6 +162,10 @@ def run_vuln_checks(host: str) -> list[dict]:
         findings.extend(_check_cors(base_url))
     except Exception:
         pass
+    try:
+        findings.extend(_check_directory_listing(base_url))
+    except Exception:
+        pass
 
     targets = _discover_targets(base_url, html)[:MAX_TARGETS]
     for target in targets:
@@ -443,6 +447,73 @@ def _check_exposed_files(base_url: str) -> list[dict]:
             "FILE", "Information Disclosure", risk, reason, title,
             cwe="CWE-552", business_risk=business_risk,
             real_world_example=real_world_example, how_to_fix=how_to_fix,
+        ))
+    return findings
+
+
+# ── Directory listing (autoindex) ─────────────────────────────────────────────
+
+_DIR_LISTING_PATHS = [
+    "/uploads/", "/images/", "/assets/", "/backup/", "/backups/",
+    "/files/", "/media/", "/wp-content/uploads/", "/documents/", "/data/",
+]
+
+# Autoindex pages (Apache mod_autoindex, Nginx autoindex, IIS directory
+# browsing) all share one of these unmistakable markers — nothing else
+# legitimately produces this exact phrasing, so this is a high-confidence
+# signal rather than a keyword guess.
+_DIR_LISTING_MARKERS = ("index of /", "<title>index of", "[to parent directory]")
+
+
+def _check_directory_listing(base_url: str) -> list[dict]:
+    home_text = ""
+    try:
+        home_text = httpx.get(base_url, timeout=REQUEST_TIMEOUT, verify=False).text
+    except Exception:
+        pass
+
+    baseline_text = ""
+    try:
+        control_path = f"/rv-control-{uuid.uuid4().hex[:10]}/"
+        baseline_text = httpx.get(urljoin(base_url, control_path), timeout=REQUEST_TIMEOUT, verify=False).text
+    except Exception:
+        pass
+
+    findings = []
+    for path in _DIR_LISTING_PATHS:
+        try:
+            r = httpx.get(urljoin(base_url, path), timeout=REQUEST_TIMEOUT, verify=False)
+        except Exception:
+            continue
+        if r.status_code != 200:
+            continue
+        if _looks_like_fallback_page(r.text, baseline_text, home_text):
+            continue
+        if not any(marker in r.text.lower() for marker in _DIR_LISTING_MARKERS):
+            continue
+        findings.append(_finding(
+            "DIRLIST", "Directory Listing Enabled", "MEDIUM",
+            f"the directory {path} has directory listing (autoindex) enabled, letting anyone browse "
+            f"and download every file inside it instead of only the ones you meant to link to",
+            "Directory Listing Enabled",
+            cwe="CWE-548",
+            business_risk=(
+                "Anyone who guesses or finds this folder's URL can browse and download every file in it — "
+                "including backups, old files, or anything else you didn't intend to publish, with no need "
+                "to know an individual filename in advance."
+            ),
+            real_world_example=(
+                f"Example: An attacker requests {path} directly, sees a full file listing instead of a 404, "
+                f"and downloads whatever's inside — old invoices, a forgotten backup, or a config file dropped "
+                f"there temporarily and never removed."
+            ),
+            how_to_fix=(
+                f"Disable directory listing for {path}. Nginx: add 'autoindex off;' to the server/location "
+                f"block (it's off by default, so check for an explicit 'autoindex on;' overriding that). "
+                f"Apache: add 'Options -Indexes' to the relevant <Directory> block or a .htaccess file in "
+                f"that folder. Also review what's actually in this folder — anything not meant to be public "
+                f"should be moved out of the web root."
+            ),
         ))
     return findings
 

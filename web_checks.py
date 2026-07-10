@@ -7,6 +7,7 @@ import ssl
 import socket
 import subprocess
 import ipaddress
+import uuid
 from datetime import datetime, timezone
 
 try:
@@ -339,6 +340,19 @@ def _check_ssl(host: str) -> list[dict]:
         ctx_old = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx_old.check_hostname = False
         ctx_old.verify_mode = ssl.CERT_NONE
+        # On OpenSSL 3.x, the default security level (SECLEVEL=2, set system-wide
+        # in openssl.cnf on most modern Linux distros — confirmed present in this
+        # deployment environment) blocks the client from even attempting a
+        # TLS1.0/1.1 handshake, regardless of what the remote server would accept.
+        # Without lowering it here, wrap_socket() always raises SSLError
+        # (NO_PROTOCOLS_AVAILABLE) before any bytes reach the server, silently
+        # caught below — meaning this check never fired on modern hosts, even
+        # against a server that genuinely still accepts old TLS. Lowering
+        # SECLEVEL only on this throwaway probe context (not ctx_noverify/
+        # ctx_strict above, which drive the real cert checks) restores the
+        # client's ability to attempt the handshake; whether it actually
+        # succeeds is still entirely up to the remote server.
+        ctx_old.set_ciphers("DEFAULT:@SECLEVEL=0")
         ctx_old.minimum_version = ssl.TLSVersion.TLSv1
         ctx_old.maximum_version = ssl.TLSVersion.TLSv1_1
         with socket.create_connection((host, 443), timeout=6) as sock:
@@ -1136,6 +1150,20 @@ def _check_admin_panels(host: str) -> list[dict]:
     except Exception:
         pass
 
+    # Control probe: a path that definitely doesn't exist. Some WAFs / bot-
+    # protection products (Cloudflare, security plugins, etc.) return 401/403
+    # for *every* path they don't like the look of, not just real restricted
+    # resources — without this baseline, that would make every single path in
+    # _ADMIN_PATHS look "exposed but access-restricted" on the same site.
+    site_blocks_everything = False
+    try:
+        control_path = f"/rv-admin-control-{uuid.uuid4().hex[:10]}"
+        cr = httpx.get(f"https://{host}{control_path}", timeout=8,
+                       follow_redirects=False, verify=False)
+        site_blocks_everything = cr.status_code in (401, 403)
+    except Exception:
+        pass
+
     for path, title, risk, keywords in _ADMIN_PATHS:
         if title in seen_titles:
             continue
@@ -1144,6 +1172,12 @@ def _check_admin_panels(host: str) -> list[dict]:
             r = httpx.get(url, timeout=8, follow_redirects=False, verify=False)
 
             if r.status_code not in (200, 401, 403):
+                continue
+
+            # A 401/403 here only means something if a nonexistent control path
+            # didn't also get blocked — otherwise it's just the site's general
+            # WAF/bot-protection behavior, not evidence this specific path exists.
+            if r.status_code in (401, 403) and site_blocks_everything:
                 continue
 
             body = r.text[:3000].lower()
@@ -1335,6 +1369,15 @@ _TAKEOVER_SERVICES = {
     "fly.dev":                ("Fly.io",         ["404", "not found"]),
 }
 
+# A few services (Azure Traffic Manager/CDN, Fly.io) don't return a distinctive
+# error message for a dangling endpoint — just a bare "404"/"not found" — which
+# is too generic to trust on its own (it'll also match plenty of ordinary pages,
+# e.g. anything mentioning a 404 area code or quoting an HTTP status in passing).
+# Entries whose indicators are *entirely* drawn from this generic set get an
+# extra "response body is short and bare" requirement below, matching what
+# these services' real dangling-endpoint pages actually look like.
+_GENERIC_TAKEOVER_MARKERS = {"404", "not found", "bad request"}
+
 _SUBDOMAINS_TO_CHECK = (
     "www", "mail", "api", "dev", "staging", "blog", "app", "test",
     "portal", "shop", "store", "cdn", "static", "assets", "media",
@@ -1376,7 +1419,12 @@ def _check_subdomain_takeover(host: str) -> list[dict]:
                 r = httpx.get(f"https://{fqdn}", timeout=8,
                               follow_redirects=True, verify=False)
                 body = r.text[:2000].lower()
-                confirmed = any(ind in body for ind in matched_indicators)
+                generic_only = matched_indicators and all(
+                    ind in _GENERIC_TAKEOVER_MARKERS for ind in matched_indicators)
+                if generic_only:
+                    confirmed = len(r.text.strip()) < 300 and any(ind in body for ind in matched_indicators)
+                else:
+                    confirmed = any(ind in body for ind in matched_indicators)
             except Exception:
                 # Connection failed entirely — the CNAME dangling is itself a signal
                 confirmed = True
