@@ -227,9 +227,27 @@ def build_scan_summary(scan_result: dict, extra_findings: list = None) -> dict:
     # weight since those represent live or near-term exposure.
     _HYGIENE_TAGS = {"HTTPS", "HTTP", "DNS"}
 
+    # Confidence-aware weighting: findings web_checks.py/content_discovery_checks.py
+    # mark as "probable" or "unverified" are inferred from indirect signals (e.g. a
+    # bare 401/403 with no content evidence), not demonstrated facts like a
+    # "confirmed" finding (missing header, expired cert, matched secret pattern,
+    # etc.). Without this, an unconfirmed guess scored the same as a demonstrated
+    # issue, which could inflate the overall score off of findings that later turn
+    # out to be false positives. "informational" findings (content-discovery's
+    # "path exists but nothing wrong with it" notes) are already LOW/INFO risk, so
+    # they're capped low regardless. Findings with no confidence field (raw nmap
+    # ports) default to "confirmed" — an open port is a directly observed fact.
+    _CONFIDENCE_WEIGHT = {
+        "confirmed": 1.0,
+        "probable": 0.6,
+        "unverified": 0.4,
+        "informational": 0.4,
+    }
+
     def _weight(p):
         base = 2 if p["risk"] == "HIGH" else 1 if p["risk"] == "MEDIUM" else 0
-        return base / 2 if str(p.get("port", "")) in _HYGIENE_TAGS else base
+        base = base / 2 if str(p.get("port", "")) in _HYGIENE_TAGS else base
+        return base * _CONFIDENCE_WEIGHT.get(p.get("confidence", "confirmed"), 1.0)
 
     score = min(10, round(sum(_weight(p) for p in ports)))
     if score == 0 and ports:

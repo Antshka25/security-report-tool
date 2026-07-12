@@ -86,11 +86,19 @@ async function startScan() {
   currentTarget = target;
   showScanningUI(target);
 
+  const cdCheckbox = $id("content-discovery-checkbox");
+  const profileSelect = $id("discovery-profile-select");
+  const contentDiscovery = !!(cdCheckbox && cdCheckbox.checked);
+  const discoveryProfile = (profileSelect && profileSelect.value) || "standard";
+
   try {
     const res  = await fetch(`${BACKEND_URL}/scan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target, scan_type: "standard", authorized: true })
+      body: JSON.stringify({
+        target, scan_type: "standard", authorized: true,
+        content_discovery: contentDiscovery, discovery_profile: discoveryProfile
+      })
     });
     const data = await res.json();
 

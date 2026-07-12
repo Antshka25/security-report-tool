@@ -844,6 +844,18 @@
       <input type="checkbox" id="scan-authorize-checkbox"/>
       <label for="scan-authorize-checkbox">I own this website or have documented authorization to scan it, and I agree to the <a href="/terms.html" target="_blank" style="color:var(--accent);">Terms of Service</a>.</label>
     </div>
+    <div class="scan-authorize" style="margin-top:0.5rem;">
+      <input type="checkbox" id="content-discovery-checkbox"/>
+      <label for="content-discovery-checkbox">Also check for exposed hidden/backup/config files (slower — only runs against paths on this exact domain, GET requests only, same authorization above applies).</label>
+    </div>
+    <div id="discovery-profile-row" style="display:none; margin-top:0.6rem; align-items:center; gap:0.6rem;">
+      <span class="scan-label" style="margin-bottom:0;">// Scan depth</span>
+      <select id="discovery-profile-select" style="background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'Space Mono', monospace; font-size:0.78rem; padding:0.4rem 0.6rem;">
+        <option value="quick">Quick (~25 paths)</option>
+        <option value="standard" selected>Standard (~100 paths)</option>
+        <option value="thorough">Thorough (largest list, slowest)</option>
+      </select>
+    </div>
     <p class="scan-note">🔒 Your first scan is completely free. No credit card required.</p>
     <p class="scan-error" id="scan-error"></p>
 
@@ -997,6 +1009,17 @@
     if (checkbox && btn) {
       const sync = () => { btn.disabled = !checkbox.checked; };
       checkbox.addEventListener('change', sync);
+      sync();
+    }
+  })();
+
+  // Show the scan-depth dropdown only once content discovery is enabled
+  (function () {
+    const cdCheckbox = document.getElementById('content-discovery-checkbox');
+    const profileRow = document.getElementById('discovery-profile-row');
+    if (cdCheckbox && profileRow) {
+      const sync = () => { profileRow.style.display = cdCheckbox.checked ? 'flex' : 'none'; };
+      cdCheckbox.addEventListener('change', sync);
       sync();
     }
   })();

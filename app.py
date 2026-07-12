@@ -21,6 +21,7 @@ from web_checks import run_web_checks
 from vuln_checks import run_vuln_checks
 from cve_checks import run_cve_checks
 from supply_chain_checks import run_supply_chain_checks
+from content_discovery_checks import run_content_discovery_checks, DEFAULT_PROFILE as CONTENT_DISCOVERY_DEFAULT_PROFILE
 import db
 
 try:
@@ -102,7 +103,8 @@ def _get_job(job_id: str) -> dict:
 # ── Background scan worker ────────────────────────────────────────────────────
 
 def _run_job(job_id: str, host: str, target_display: str,
-             business_name: str, scan_type: str):
+             business_name: str, scan_type: str,
+             content_discovery: bool = False, discovery_profile: str = CONTENT_DISCOVERY_DEFAULT_PROFILE):
     try:
         # Step 1: Validate
         _set_job(job_id, {"step": "Validating target…", "progress": 5})
@@ -147,6 +149,17 @@ def _run_job(job_id: str, host: str, target_display: str,
             web_findings.extend(run_supply_chain_checks(host))
         except Exception as supply_chain_err:
             app.logger.warning(f"Supply-chain checks failed ({supply_chain_err}), continuing without them")
+
+        # Step 2f: Hidden-directory / sensitive-file discovery — opt-in only,
+        # since it's the slowest and highest-request-volume check. Gated behind
+        # the same authorization checkbox as the rest of the scan (see
+        # start_scan()); this module does normal GETs only, nothing destructive.
+        if content_discovery:
+            _set_job(job_id, {"step": "Checking for exposed files & hidden paths…", "progress": 58})
+            try:
+                web_findings.extend(run_content_discovery_checks(host, discovery_profile))
+            except Exception as cd_err:
+                app.logger.warning(f"Content discovery checks failed ({cd_err}), continuing without them")
 
         # Step 3: Build summary (merge nmap + web findings)
         _set_job(job_id, {"step": "Analysing all findings…", "progress": 55})
@@ -336,6 +349,8 @@ def start_scan():
     target       = (data.get("target") or "").strip()
     business_name= (data.get("business_name") or "").strip()
     scan_type    = data.get("scan_type", "standard")
+    content_discovery = bool(data.get("content_discovery", False))
+    discovery_profile = data.get("discovery_profile") or CONTENT_DISCOVERY_DEFAULT_PROFILE
 
     if not target:
         return jsonify({"error": "Please enter a URL or IP address"}), 400
@@ -357,12 +372,15 @@ def start_scan():
         "host":     resolved["host"],
         "business_name": business_name,
         "scan_type":      scan_type,
+        "content_discovery": content_discovery,
+        "discovery_profile": discovery_profile,
         "started_at": datetime.now().isoformat(),
     })
 
     thread = threading.Thread(
         target=_run_job,
-        args=(job_id, resolved["host"], target, business_name, scan_type),
+        args=(job_id, resolved["host"], target, business_name, scan_type,
+              content_discovery, discovery_profile),
         daemon=True,
     )
     thread.start()

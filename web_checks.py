@@ -8,6 +8,7 @@ import socket
 import subprocess
 import ipaddress
 import uuid
+import hashlib
 from datetime import datetime, timezone
 
 try:
@@ -81,7 +82,7 @@ def _is_ip(host: str) -> bool:
 
 def _finding(port, service, risk, reason, title="", version="",
              category="web", how_to_fix="", urgency="", business_risk="", cwe="",
-             real_world_example=""):
+             real_world_example="", confidence="confirmed"):
     return {
         "port":       port,
         "proto":      "tcp",
@@ -114,6 +115,14 @@ def _finding(port, service, risk, reason, title="", version="",
             "Fix within 1 week" if risk == "MEDIUM" else
             "Fix within 1 month"
         ),
+        # "confirmed" (default): deterministic checks (missing header, expired
+        # cert, etc.) — no ambiguity about whether the condition is real.
+        # "probable" / "unverified": used by checks that infer existence from
+        # indirect signals (e.g. a bare 401/403 with no content evidence) —
+        # see _check_admin_panels(). scanner.py's risk-score weighting reads
+        # this to avoid letting an unconfirmed guess score the same as a
+        # deterministic finding.
+        "confidence": confidence,
     }
 
 
@@ -423,6 +432,16 @@ def _check_ssl(host: str) -> list[dict]:
 
 # ── HTTP Security Headers ─────────────────────────────────────────────────────
 
+# Substrings in a cookie's *name* that suggest it's likely session/auth-related
+# (not a confirmed fact — we never inspect the cookie's actual value). Used to
+# decide whether session-hijacking language is warranted for a given cookie
+# finding, or whether to report the gap without assuming high-value contents.
+_SESSION_COOKIE_NAME_MARKERS = (
+    "session", "sess", "auth", "token", "jwt", "sid", "login",
+    "credential", "remember", "logged_in", "user_id", "uid",
+)
+
+
 def _check_http_headers(host: str) -> list[dict]:
     if not HAS_HTTPX:
         return []
@@ -552,24 +571,33 @@ def _check_http_headers(host: str) -> list[dict]:
     if "content-security-policy" not in headers:
         findings.append(_finding(
             "HTTPS", "Content Security Policy", "MEDIUM",
-            "Missing Content-Security-Policy (CSP) — no browser protection against cross-site scripting attacks that steal customer data",
+            "Missing Content-Security-Policy (CSP) — this site has no CSP defense-in-depth layer, so if any "
+            "cross-site scripting weakness exists elsewhere it's easier to exploit; this finding on its own "
+            "doesn't mean an XSS vulnerability exists on this site",
             "Missing Content-Security-Policy (CSP)",
             cwe="CWE-693",
             business_risk=(
-                "If an attacker ever manages to slip malicious script onto your site (e.g. through a vulnerable "
-                "plugin or a comment field), there's nothing in place to stop it from running and stealing "
-                "customer data such as login sessions or payment details."
+                "CSP is a defense-in-depth browser control, not evidence of an active vulnerability by itself — "
+                "but if an attacker ever manages to slip malicious script onto your site through some other "
+                "weakness (e.g. a vulnerable plugin or a comment field), a good CSP is often what stops that "
+                "script from running and stealing customer data such as login sessions or payment details. "
+                "Without it, that second layer of protection isn't there."
             ),
             real_world_example=(
                 "Example: A vulnerable comment form or compromised ad widget lets an attacker inject a script "
-                "tag; without CSP, the browser runs it without question and it quietly forwards every visitor's "
-                "session cookie to the attacker."
+                "tag; with a properly scoped CSP in place, the browser would refuse to run it — without CSP, "
+                "that same injected script runs freely and can forward a visitor's session cookie to the attacker."
             ),
             how_to_fix=(
-                "Add a Content-Security-Policy header. Start with a basic policy: "
-                "'add_header Content-Security-Policy \"default-src \\'self\\'; script-src \\'self\\'; object-src \\'none\\'\";' "
-                "For WordPress or complex sites, use https://csp-evaluator.withgoogle.com to generate a custom policy. "
-                "This is one of the most effective defenses against data theft."
+                "Add a Content-Security-Policy header, but roll it out carefully — a misconfigured CSP can break "
+                "legitimate scripts/styles on the site. Start by deploying it in Report-Only mode first, which "
+                "reports violations without blocking anything: "
+                "'add_header Content-Security-Policy-Report-Only \"default-src \\'self\\'; script-src \\'self\\'; "
+                "object-src \\'none\\'; report-uri /csp-report\";' "
+                "Review the reports for a while to catch anything the policy would break, adjust the policy, "
+                "then switch the header name to 'Content-Security-Policy' (without '-Report-Only') to start "
+                "enforcing it. For WordPress or complex sites, use https://csp-evaluator.withgoogle.com to help "
+                "build the policy."
             )
         ))
 
@@ -691,29 +719,59 @@ def _check_http_headers(host: str) -> list[dict]:
                 missing.append("HttpOnly")
             if "samesite" not in lower:
                 missing.append("SameSite")
+            # Exact attributes actually observed on this cookie, for a factual
+            # record of what was seen rather than just what's missing.
+            observed_attrs = [a.strip() for a in cookie_str.split(";")[1:] if a.strip()]
+            observed_note = ", ".join(observed_attrs) if observed_attrs else "no additional attributes set"
             if missing:
-                risk = "MEDIUM" if ("Secure" in missing or "HttpOnly" in missing) else "LOW"
+                # Whether this looks like a session/auth cookie by name is a
+                # heuristic, not a confirmed fact — we haven't inspected what
+                # value the cookie actually holds. Only use session-hijacking
+                # language when the name suggests that's plausible; otherwise
+                # report the gap factually without assuming high-value content.
+                name_lower = cookie_name.lower()
+                looks_sensitive = any(m in name_lower for m in _SESSION_COOKIE_NAME_MARKERS)
+                risk = "MEDIUM" if looks_sensitive and ("Secure" in missing or "HttpOnly" in missing) else "LOW"
                 # CWE per missing flag — verified against cwe.mitre.org: Secure -> CWE-614,
                 # HttpOnly -> CWE-1004, SameSite -> CWE-1275. Built dynamically since a
                 # single cookie finding can be missing more than one flag at once.
                 _cookie_cwe = {"Secure": "CWE-614", "HttpOnly": "CWE-1004", "SameSite": "CWE-1275"}
                 cookie_cwe = ", ".join(_cookie_cwe[m] for m in missing)
-                findings.append(_finding(
-                    "HTTPS", "Cookie Security", risk,
-                    f"Cookie '{cookie_name}' is missing the {', '.join(missing)} flag(s), making it easier to steal or misuse",
-                    f"Insecure Cookie Flags ({cookie_name})",
-                    cwe=cookie_cwe,
-                    business_risk=(
-                        "Without these flags, a cookie is easier to steal through cross-site scripting or to "
-                        "intercept over an unencrypted connection — and a stolen session cookie can let an "
-                        "attacker impersonate that logged-in user without ever needing their password."
-                    ),
-                    real_world_example=(
+                if looks_sensitive:
+                    business_risk = (
+                        f"This cookie's name suggests it may hold a session or authentication token, though "
+                        f"its actual contents weren't inspected. If it does, a cookie missing these flags is "
+                        f"easier to steal through cross-site scripting or to intercept over an unencrypted "
+                        f"connection — and a stolen session cookie can let an attacker impersonate that logged-in "
+                        f"user without ever needing their password."
+                    )
+                    example = (
                         "Example: A visitor on public wifi has their session cookie intercepted because it "
                         "wasn't marked Secure, or a malicious ad script reads it directly because it wasn't "
                         "marked HttpOnly — either way, the attacker is now logged in as that user without ever "
                         "seeing their password."
-                    ),
+                    )
+                else:
+                    business_risk = (
+                        f"This cookie's name doesn't clearly indicate it holds session or authentication data, "
+                        f"so the practical impact depends on what value it actually stores — anywhere from "
+                        f"low-stakes (a UI preference) to more sensitive (tracking or personalization data). "
+                        f"Missing these flags means whatever the cookie does hold is more exposed than it needs "
+                        f"to be to interception or script access."
+                    )
+                    example = (
+                        f"Example: whatever value '{cookie_name}' holds could be read by an injected script "
+                        f"(no HttpOnly) or intercepted on an unencrypted connection (no Secure) — the actual "
+                        f"severity depends on how sensitive that value turns out to be."
+                    )
+                findings.append(_finding(
+                    "HTTPS", "Cookie Security", risk,
+                    f"Cookie '{cookie_name}' is missing the {', '.join(missing)} flag(s). Observed attributes: "
+                    f"{observed_note}.",
+                    f"Insecure Cookie Flags ({cookie_name})",
+                    cwe=cookie_cwe,
+                    business_risk=business_risk,
+                    real_world_example=example,
                     how_to_fix=(
                         f"Add the missing flag(s) when setting this cookie: Secure (only send over HTTPS), "
                         f"HttpOnly (block JavaScript access), SameSite=Lax or Strict (limit cross-site sending). "
@@ -751,14 +809,18 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                 if "+all" in txt:
                     findings.append(_finding(
                         "DNS", "SPF Record", "HIGH",
-                        "SPF record uses '+all' — anyone on the internet can send emails as your domain, the record does nothing",
+                        "SPF record uses '+all' — the SPF check passes for any sending server, so this record "
+                        "provides no envelope-sender authorization at all",
                         "SPF Record Too Permissive (+all)",
                         category="dns",
                         cwe="CWE-290",
                         business_risk=(
-                            "Scammers can send phishing or fraud emails that look exactly like they came from "
-                            "your business, and recipients have no way to tell them apart from the real thing — "
-                            "putting your customers and your reputation at risk."
+                            "SPF only authorizes which mail servers may use your domain in the invisible SMTP "
+                            "'envelope sender' — with '+all', that check is disabled entirely, so any server can "
+                            "pass it. On top of that, SPF alone (even set to '-all') never stops the visible "
+                            "'From:' address a recipient actually sees from being spoofed — that protection "
+                            "comes from DMARC enforcing alignment between SPF/DKIM and the From header, so this "
+                            "gap matters even more if DMARC isn't set to enforce."
                         ),
                         real_world_example=(
                             "Example: A scammer sends an invoice-fraud email that appears to come from "
@@ -769,7 +831,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                             "Change '+all' to '-all' (hard fail) in your SPF record in your DNS settings. "
                             "Log into your domain registrar (GoDaddy, Namecheap, etc.), go to DNS settings, "
                             "find the TXT record starting with 'v=spf1', and change '+all' to '-all'. "
-                            "Example: 'v=spf1 include:_spf.google.com -all'"
+                            "Example: 'v=spf1 include:_spf.google.com -all' — but list every service that "
+                            "legitimately sends mail for this domain (email provider, helpdesk, marketing tools, "
+                            "etc.) in the 'include:' entries first, or their mail will start failing SPF too. "
+                            "Also add a DMARC record (see below) so From-header spoofing is covered, not just "
+                            "the envelope sender."
                         )
                     ))
                 elif "?all" in txt:
@@ -798,14 +864,17 @@ def _check_dns_dnspython(host: str) -> list[dict]:
     if not spf_found:
         findings.append(_finding(
             "DNS", "SPF Record", "HIGH",
-            "No SPF record — anyone can send emails pretending to be from your domain, used for phishing scams targeting your customers",
+            "No SPF record — there's no DNS-level list of which mail servers are authorized to send using "
+            "this domain's envelope sender, so any server can pass an SPF check for your domain",
             "Missing SPF Record — Email Spoofing Possible",
             category="dns",
             cwe="CWE-290",
             business_risk=(
-                "Without SPF, scammers can convincingly impersonate your business by email — which can lead to "
-                "customers being defrauded, your domain's email reputation being damaged, and your own real "
-                "emails landing in spam as a result."
+                "Without SPF, nothing tells receiving mail servers which senders are legitimate for this "
+                "domain's SMTP envelope, making it easier for forged mail to get through — and easier for your "
+                "own legitimate mail to be misjudged as spam. Note that SPF on its own, even correctly "
+                "configured, doesn't stop the visible 'From:' address a recipient sees from being spoofed — "
+                "that requires DMARC (see below) to enforce alignment between SPF/DKIM and the From header."
             ),
             real_world_example=(
                 "Example: A customer receives an email that looks exactly like it's from the business — same "
@@ -813,12 +882,15 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                 "in DNS to stop the forgery or warn the recipient."
             ),
             how_to_fix=(
-                "Add an SPF TXT record to your DNS. Log into your domain registrar, go to DNS, "
-                "add a new TXT record for '@' with value: 'v=spf1 include:_spf.google.com -all' "
-                "(replace the include with your email provider's SPF). "
-                "Google Workspace: 'v=spf1 include:_spf.google.com -all' | "
-                "Microsoft 365: 'v=spf1 include:spf.protection.outlook.com -all' | "
-                "Generic: 'v=spf1 a mx -all'. Use https://mxtoolbox.com/spf.aspx to verify."
+                "Add an SPF TXT record to your DNS listing every service that actually sends mail for this "
+                "domain — leaving one out will cause its mail to fail SPF and possibly get rejected. "
+                "Log into your domain registrar, go to DNS, add a TXT record for '@' with a value matching "
+                "your provider: Google Workspace: 'v=spf1 include:_spf.google.com -all' | Microsoft 365: "
+                "'v=spf1 include:spf.protection.outlook.com -all'. If you use additional senders (helpdesk, "
+                "marketing platform, invoicing tool, etc.), add each as its own 'include:' entry in the same "
+                "record — a domain can only have one SPF TXT record, so don't create a second one. "
+                "Use https://mxtoolbox.com/spf.aspx to verify, then add a DMARC record too so the visible "
+                "From address is covered as well."
             )
         ))
 
@@ -834,6 +906,7 @@ def _check_dns_dnspython(host: str) -> list[dict]:
             if "v=dmarc1" in txt.lower():
                 dmarc_found = True
                 if "p=none" in txt.lower():
+                    has_rua = "rua=" in txt.lower()
                     findings.append(_finding(
                         "DNS", "DMARC Policy", "MEDIUM",
                         "DMARC is set to monitor-only (p=none) — phishing emails pretending to be you aren't blocked, just reported",
@@ -842,8 +915,13 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                         cwe="CWE-290",
                         business_risk=(
                             "Phishing emails pretending to be your business can still reach customers' inboxes "
-                            "today — you'll get reports about it after the fact, but nothing actually stops the "
-                            "fraudulent emails from being delivered right now."
+                            "today — you'll get aggregate reports about it after the fact (if 'rua=' reporting "
+                            "is configured), but nothing actually stops the fraudulent emails from being "
+                            "delivered right now. p=none is a legitimate and recommended first step — it lets "
+                            "you review reports and confirm all your real mail sources pass DMARC alignment "
+                            "(the From-header domain matching either an aligned SPF pass or an aligned DKIM "
+                            "signature) before you start blocking anything — the risk is only in staying at "
+                            "p=none indefinitely instead of using it as a monitoring phase."
                         ),
                         real_world_example=(
                             "Example: Forged emails impersonating the business keep reaching customers' "
@@ -851,10 +929,14 @@ def _check_dns_dnspython(host: str) -> list[dict]:
                             "because the policy is monitor-only, nothing actually blocks a single one of them."
                         ),
                         how_to_fix=(
-                            "Upgrade DMARC from p=none to p=quarantine or p=reject. "
-                            "In your DNS, update the _dmarc TXT record: change 'p=none' to 'p=quarantine' first (sends suspicious mail to spam). "
-                            "After a week with no issues, change to 'p=reject' (blocks spoofed emails completely). "
-                            "Example final record: 'v=DMARC1; p=reject; rua=mailto:dmarc@yourdomain.com'"
+                            "Review DMARC aggregate reports (they require 'rua=mailto:...' in the record"
+                            + ("" if has_rua else " — this record doesn't appear to have one, add it first")
+                            + ") for a few weeks to confirm every legitimate mail source for this domain is "
+                            "passing DMARC alignment. Once confirmed, move to 'p=quarantine' (suspicious mail "
+                            "goes to spam) and monitor again before finally moving to 'p=reject' (spoofed mail "
+                            "is rejected outright). Don't jump straight to p=reject — if a legitimate sender "
+                            "was missed, that skips straight to real mail being dropped. "
+                            "Example: 'v=DMARC1; p=quarantine; rua=mailto:dmarc@yourdomain.com'"
                         )
                     ))
                 break
@@ -881,8 +963,11 @@ def _check_dns_dnspython(host: str) -> list[dict]:
             how_to_fix=(
                 "Add a DMARC TXT record to your DNS. Go to your domain registrar's DNS settings, "
                 "add a TXT record for '_dmarc' (not '@') with value: "
-                "'v=DMARC1; p=quarantine; rua=mailto:youremail@yourdomain.com' "
-                "Start with p=quarantine, monitor for a week, then change to p=reject for full protection. "
+                "'v=DMARC1; p=none; rua=mailto:youremail@yourdomain.com' "
+                "Start at p=none — this only turns on reporting, nothing is blocked yet. Review the aggregate "
+                "reports for a few weeks to confirm every legitimate mail source for this domain (email "
+                "provider, helpdesk, marketing tools, etc.) is passing DMARC alignment, then move to "
+                "p=quarantine, and finally p=reject once you're confident nothing legitimate will be caught. "
                 "Verify at https://mxtoolbox.com/dmarc.aspx"
             )
         ))
@@ -901,26 +986,33 @@ def _check_dns_dnspython(host: str) -> list[dict]:
     if not dkim_found:
         findings.append(_finding(
             "DNS", "DKIM Record", "MEDIUM",
-            "No DKIM signature detected — outgoing emails aren't cryptographically signed, making spoofing and tampering easier",
-            "DKIM Not Detected",
+            "No DKIM record found under common selector names — this does not confirm DKIM is unconfigured, "
+            "only that it wasn't found under any of the selector names checked; many providers use a custom "
+            "or provider-specific selector this check can't guess",
+            "DKIM Not Detected Under Common Selectors",
             category="dns",
             cwe="CWE-290",
+            confidence="probable",
             business_risk=(
-                "Email providers increasingly use DKIM as a trust signal — without it, your legitimate emails "
-                "are more likely to be flagged as suspicious or land in spam, hurting delivery of invoices, "
-                "marketing, and everyday customer communications."
+                "If DKIM genuinely isn't configured, email providers increasingly use it as a trust signal, "
+                "and its absence can make legitimate emails more likely to be flagged as suspicious or land in "
+                "spam. But this check only queries a fixed list of common selector names (default, google, "
+                "mail, etc.) — many providers assign a random or account-specific selector, so this finding "
+                "should be treated as 'couldn't confirm DKIM,' not 'DKIM is definitely missing.'"
             ),
             real_world_example=(
                 "Example: A legitimate invoice email from the business gets flagged as suspicious or dropped "
                 "into spam by the recipient's mail provider, simply because there's no DKIM signature to prove "
-                "the message wasn't altered or forged in transit."
+                "the message wasn't altered or forged in transit — this only actually happens if DKIM is truly "
+                "unconfigured, which this check alone can't confirm."
             ),
             how_to_fix=(
-                "Enable DKIM signing through your email provider. "
-                "Google Workspace: Admin console > Apps > Gmail > Authenticate email > Generate DKIM key, then add the TXT record to DNS. "
-                "Microsoft 365: Security > Email authentication > DKIM > enable for your domain. "
-                "Other providers: check their docs for 'DKIM setup'. "
-                "Note: we checked common selectors — if you use a custom DKIM selector this may be a false alarm."
+                "First confirm whether DKIM is actually configured: check your email provider's admin console "
+                "(Google Workspace: Admin console > Apps > Gmail > Authenticate email; Microsoft 365: Defender "
+                "> Email authentication > DKIM) for the exact selector name in use, since it's often not one of "
+                "the common defaults this scan checks. If it turns out DKIM genuinely isn't enabled, turn it on "
+                "there and add the resulting TXT record to DNS. If you're not sure how to check, share the "
+                "selector name your provider gives you and this can be verified directly."
             )
         ))
 
@@ -1093,42 +1185,183 @@ def _check_domain_expiration(host: str) -> list[dict]:
 
 # ── Open admin / sensitive panel probing ──────────────────────────────────────
 
-# Paths to probe, in order. Tuples of (path, title, severity, body_keywords).
+# Paths to probe, in order. Tuples of (path, title, severity, body_keywords, kind).
 # body_keywords: if any appear in the response body it's more likely a real panel;
 # empty list means a 200 status alone is sufficient (e.g. .git/HEAD has a
 # distinctive body regardless of keywords).
+# kind controls which explanatory narrative gets used below — these paths are
+# NOT all the same type of exposure (a login-brute-forceable admin panel is a
+# very different risk from a Git-metadata leak or a diagnostic info page), so
+# a single generic "admin panel" business_risk/how_to_fix was wrong for the
+# non-admin-panel entries. See _check_admin_panels()'s _NARRATIVES below.
 _ADMIN_PATHS = [
     ("/.git/HEAD",          "Exposed .git Directory",          "HIGH",
-     ["ref: refs/heads/"]),
+     ["ref: refs/heads/"], "git"),
     ("/wp-admin/",          "WordPress Admin Panel Exposed",    "HIGH",
-     ["wordpress", "wp-login", "log in", "username", "password"]),
+     ["wordpress", "wp-login", "log in", "username", "password"], "admin_panel"),
     ("/phpmyadmin/",        "phpMyAdmin Exposed",               "HIGH",
-     ["phpmyadmin", "mysql", "sql", "database"]),
+     ["phpmyadmin", "mysql", "sql", "database"], "admin_panel"),
     ("/phpmyadmin",         "phpMyAdmin Exposed",               "HIGH",
-     ["phpmyadmin", "mysql", "sql", "database"]),
+     ["phpmyadmin", "mysql", "sql", "database"], "admin_panel"),
     ("/admin/",             "Admin Panel Exposed",              "HIGH",
-     ["login", "admin", "dashboard", "username", "password", "sign in"]),
+     ["login", "admin", "dashboard", "username", "password", "sign in"], "admin_panel"),
     ("/admin",              "Admin Panel Exposed",              "HIGH",
-     ["login", "admin", "dashboard", "username", "password", "sign in"]),
+     ["login", "admin", "dashboard", "username", "password", "sign in"], "admin_panel"),
     ("/administrator/",     "Admin Panel Exposed",              "HIGH",
-     ["login", "admin", "dashboard", "username", "password"]),
+     ["login", "admin", "dashboard", "username", "password"], "admin_panel"),
     ("/admin.php",          "Admin Panel Exposed",              "HIGH",
-     ["login", "admin", "dashboard", "username", "password"]),
+     ["login", "admin", "dashboard", "username", "password"], "admin_panel"),
     ("/login",              "Admin Login Page Exposed",         "MEDIUM",
-     ["admin", "dashboard", "control panel", "management"]),
+     ["admin", "dashboard", "control panel", "management"], "admin_panel"),
     ("/dashboard",          "Admin Dashboard Exposed",          "HIGH",
-     ["admin", "dashboard", "control panel", "users", "settings"]),
+     ["admin", "dashboard", "control panel", "users", "settings"], "admin_panel"),
     ("/cpanel/",            "cPanel Exposed",                   "HIGH",
-     ["cpanel", "webmail", "hosting", "control panel"]),
+     ["cpanel", "webmail", "hosting", "control panel"], "admin_panel"),
     ("/server-status",      "Apache Server Status Exposed",     "HIGH",
-     ["apache", "server status", "requests currently being processed"]),
+     ["apache", "server status", "requests currently being processed"], "diagnostic"),
     ("/server-info",        "Apache Server Info Exposed",       "MEDIUM",
-     ["apache", "server information", "module"]),
+     ["apache", "server information", "module"], "diagnostic"),
     ("/elmah.axd",          "ELMAH Error Log Exposed",          "HIGH",
-     ["elmah", "error log", "exception"]),
+     ["elmah", "error log", "exception"], "diagnostic"),
 ]
 
+# Per-kind explanatory text. "admin_panel" keeps the original brute-force/
+# login framing (accurate for those paths); "git" and "diagnostic" get their
+# own accurate narratives instead of inheriting admin-panel language that
+# doesn't apply to them (e.g. .git/HEAD isn't a login page to brute-force).
+_ADMIN_NARRATIVES = {
+    "admin_panel": {
+        "reason_suffix": "this exposes administration functionality to anyone on the internet",
+        "cwe": "CWE-284",
+        "business_risk": (
+            "Publicly reachable admin panels are a primary target for automated attacks. "
+            "An attacker who can reach {path} can attempt brute-force login, exploit known "
+            "vulnerabilities in the admin software, or leverage it as a stepping stone to full "
+            "server compromise — without needing any insider knowledge of the site."
+        ),
+        "real_world_example": (
+            "Example: Automated bots constantly scan the internet for paths like {path}. A business "
+            "that left a default admin URL accessible was compromised when a bot found it, brute-forced "
+            "a weak password in minutes, and installed backdoor malware — all without any human attacker "
+            "being involved."
+        ),
+        "how_to_fix": (
+            "Restrict access to {path} by IP allowlist, move it to a non-standard path, or disable it "
+            "if not needed. Nginx: 'location ^~ {path} {{ allow YOUR_IP; deny all; }}'. "
+            "Also ensure strong, unique credentials are set for any admin accounts, and enable "
+            "multi-factor authentication where supported."
+        ),
+    },
+    "git": {
+        "reason_suffix": "this exposes the site's Git repository metadata, not an admin login",
+        "cwe": "CWE-527",
+        "business_risk": (
+            "This is not a login page to brute-force — a publicly accessible {path} can let an attacker "
+            "reconstruct this site's Git repository: full source code, configuration files, commit "
+            "history, internal file paths, and any secrets that were ever committed, even ones later "
+            "removed from the latest version but never rotated."
+        ),
+        "real_world_example": (
+            "Example: A free, widely available tool rebuilds this site's entire source code and commit "
+            "history from the exposed .git folder within minutes — sometimes turning up a hardcoded "
+            "API key or password that was deleted from the current code but never actually rotated."
+        ),
+        "how_to_fix": (
+            "Block public access to {path} entirely — it should never be servable. Nginx: "
+            "'location ~ /\\.git {{ deny all; }}'. Apache: '<DirectoryMatch \"\\.git\"> Require all "
+            "denied </DirectoryMatch>'. Better yet, don't deploy the .git folder to the live server at "
+            "all. If any credentials were ever committed to this repo, rotate them — treat them as compromised."
+        ),
+    },
+    "diagnostic": {
+        "reason_suffix": "this exposes internal server diagnostic information, not a login panel",
+        "cwe": "CWE-200",
+        "business_risk": (
+            "This page reveals internal details about the server's configuration, active connections, "
+            "or recent errors — not something the general public should be able to see, and useful "
+            "reconnaissance an attacker can use to plan a more targeted attack elsewhere on the site."
+        ),
+        "real_world_example": (
+            "Example: An attacker reviews this page to learn internal server details, request patterns, "
+            "or recent error messages, then uses that information to plan a more targeted attack "
+            "elsewhere on the site instead of guessing blind."
+        ),
+        "how_to_fix": (
+            "Restrict access to {path} by IP allowlist, or disable it entirely if not needed. Nginx: "
+            "'location ^~ {path} {{ allow YOUR_IP; deny all; }}'. Apache ('server-status'/'server-info'): "
+            "add 'Require ip YOUR_IP' inside the relevant <Location> block, or remove the module if unused."
+        ),
+    },
+}
+
 _ADMIN_DEDUP: set = set()  # avoid duplicate titles within a single scan
+
+# How many distinct random-path control probes to baseline against. A single
+# control path only proves "this one random path behaves like X" — several
+# samples make it much harder for one coincidental match (e.g. a CDN cache
+# hit) to slip a false positive through.
+_ADMIN_BASELINE_SAMPLES = 3
+
+
+def _title_of(text: str) -> str:
+    m = re.search(r"<title[^>]*>(.*?)</title>", text or "", re.I | re.S)
+    return (m.group(1).strip() if m else "")[:120]
+
+
+def _body_hash(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", (text or "")[:3000]).strip()
+    return hashlib.sha256(normalized.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _response_signature(status: int, body: str, headers) -> dict:
+    return {
+        "status":     status,
+        "length":     len(body or ""),
+        "title":      _title_of(body),
+        "hash":       _body_hash(body),
+        "server":     (headers.get("server") or "").lower(),
+        "www_auth":   (headers.get("www-authenticate") or "").lower(),
+        "redirect":   (headers.get("location") or "").lower(),
+    }
+
+
+def _build_admin_baseline(host: str) -> list:
+    """Probe several definitely-nonexistent random paths and record a rich
+    signature for each (status, body hash, length, title, server header,
+    WWW-Authenticate realm, redirect target). Comparing a real candidate
+    against several of these — not just one — is what lets us tell "this
+    WAF/proxy blocks everything identically" apart from "this specific path
+    is handled differently," across every status code, not just 401/403."""
+    baseline = []
+    for _ in range(_ADMIN_BASELINE_SAMPLES):
+        control_path = f"/rv-admin-control-{uuid.uuid4().hex[:10]}"
+        try:
+            r = httpx.get(f"https://{host}{control_path}", timeout=8,
+                          follow_redirects=False, verify=False)
+            baseline.append(_response_signature(r.status_code, r.text[:3000], r.headers))
+        except Exception:
+            continue
+    return baseline
+
+
+def _matches_admin_baseline(baseline: list, sig: dict) -> bool:
+    """True if `sig` looks like the same generic response as one of the
+    random-path control probes — meaning it's evidence about the site's
+    general behavior (WAF, catch-all router, uniform block page), not
+    evidence that this specific candidate path exists or is distinct."""
+    for b in baseline:
+        if b["status"] != sig["status"]:
+            continue
+        if b["hash"] == sig["hash"]:
+            return True
+        if abs(b["length"] - sig["length"]) <= 40 and b["title"] == sig["title"]:
+            return True
+        if (b["server"] and b["server"] == sig["server"]
+                and b["www_auth"] == sig["www_auth"]
+                and b["redirect"] == sig["redirect"]
+                and abs(b["length"] - sig["length"]) <= 40):
+            return True
+    return False
 
 
 def _check_admin_panels(host: str) -> list[dict]:
@@ -1150,21 +1383,9 @@ def _check_admin_panels(host: str) -> list[dict]:
     except Exception:
         pass
 
-    # Control probe: a path that definitely doesn't exist. Some WAFs / bot-
-    # protection products (Cloudflare, security plugins, etc.) return 401/403
-    # for *every* path they don't like the look of, not just real restricted
-    # resources — without this baseline, that would make every single path in
-    # _ADMIN_PATHS look "exposed but access-restricted" on the same site.
-    site_blocks_everything = False
-    try:
-        control_path = f"/rv-admin-control-{uuid.uuid4().hex[:10]}"
-        cr = httpx.get(f"https://{host}{control_path}", timeout=8,
-                       follow_redirects=False, verify=False)
-        site_blocks_everything = cr.status_code in (401, 403)
-    except Exception:
-        pass
+    baseline = _build_admin_baseline(host)
 
-    for path, title, risk, keywords in _ADMIN_PATHS:
+    for path, title, risk, keywords, kind in _ADMIN_PATHS:
         if title in seen_titles:
             continue
         try:
@@ -1174,56 +1395,80 @@ def _check_admin_panels(host: str) -> list[dict]:
             if r.status_code not in (200, 401, 403):
                 continue
 
-            # A 401/403 here only means something if a nonexistent control path
-            # didn't also get blocked — otherwise it's just the site's general
-            # WAF/bot-protection behavior, not evidence this specific path exists.
-            if r.status_code in (401, 403) and site_blocks_everything:
+            body = r.text[:3000]
+            body_lower = body.lower()
+            sig = _response_signature(r.status_code, body, r.headers)
+
+            # This is the core anti-false-positive check, and it now applies
+            # to every status code, not just 401/403: if this response is
+            # indistinguishable (status + body hash/length+title, or
+            # server+auth-realm+redirect fingerprint) from what several
+            # definitely-nonexistent random paths returned, it's evidence
+            # about the site in general, not about this path specifically —
+            # never confirm a finding on that basis alone.
+            if _matches_admin_baseline(baseline, sig):
                 continue
 
-            body = r.text[:3000].lower()
+            keyword_hit = bool(keywords) and any(kw in body_lower for kw in keywords)
 
-            # 401/403 is strong signal — access is restricted, meaning the resource exists
-            access_restricted = r.status_code in (401, 403)
-
-            # For 200: require at least one keyword to avoid false positives from catch-alls
             if r.status_code == 200:
-                if keywords and not any(kw in body for kw in keywords):
+                if keywords and not keyword_hit:
                     continue
                 # Skip if the body is basically identical to the homepage (catch-all route)
-                if homepage_text and len(body) > 100:
-                    overlap = sum(1 for kw in body.split()[:80] if kw in homepage_text)
+                if homepage_text and len(body_lower) > 100:
+                    overlap = sum(1 for kw in body_lower.split()[:80] if kw in homepage_text)
                     if overlap > 60:
                         continue
+                # 200 + distinct-from-baseline + technology-specific content
+                # match (or no keywords required for this path, e.g. .git/HEAD's
+                # own distinctive body) — this is real, demonstrated evidence.
+                confidence = "confirmed"
+                access_restricted = False
+            else:
+                # 401/403, and NOT explained by the site's general baseline
+                # behavior — genuinely distinct handling for this path. That's
+                # real signal something is there, but a 401/403 body is
+                # usually near-empty, so technology-specific content evidence
+                # (the actual bar for "confirmed") is rarely available here.
+                # Per the false positives already found for /.git/HEAD,
+                # /wp-admin/, /phpmyadmin/, /admin.php: a bare distinct 401/403
+                # alone is never enough to call this "publicly exposed
+                # administration functionality" — that requires content
+                # evidence keyword_hit gives us. Without it, this is
+                # "probable" (something's there, restricted) not "confirmed".
+                confidence = "confirmed" if keyword_hit else "probable"
+                access_restricted = True
 
             seen_titles.add(title)
 
-            status_note = "is accessible without authentication" if access_restricted is False else \
-                          "returns a restricted-access response (401/403) confirming the path exists"
+            narrative = _ADMIN_NARRATIVES.get(kind, _ADMIN_NARRATIVES["admin_panel"])
+
+            if confidence == "confirmed":
+                status_note = ("is accessible without authentication" if not access_restricted else
+                               "returns a restricted-access response (401/403), and its content "
+                               "matches known indicators for this resource, confirming what it is")
+                effective_risk = risk
+                effective_title = title
+            else:
+                status_note = ("returns a restricted-access response (401/403) that is genuinely "
+                               "distinct from how this site handles random nonexistent paths — "
+                               "this confirms *something* is being specially handled at this path, "
+                               "but the response contains no content confirming what it actually is")
+                # Never assign HIGH severity to an unconfirmed guess — cap it
+                # one tier down so severity reflects actual demonstrated impact.
+                effective_risk = "MEDIUM" if risk == "HIGH" else "LOW"
+                effective_title = f"{title} (Unconfirmed)"
 
             findings.append(_finding(
-                "HTTPS", title, risk,
-                f"The path {path} {status_note} — this exposes sensitive administration functionality to anyone on the internet",
-                title,
+                "HTTPS", title, effective_risk,
+                f"The path {path} {status_note} — {narrative['reason_suffix']}",
+                effective_title,
                 category="web",
-                cwe="CWE-284",
-                business_risk=(
-                    f"Publicly reachable admin panels are a primary target for automated attacks. "
-                    f"An attacker who can reach {path} can attempt brute-force login, exploit known "
-                    f"vulnerabilities in the admin software, or leverage it as a stepping stone to full "
-                    f"server compromise — without needing any insider knowledge of the site."
-                ),
-                real_world_example=(
-                    f"Example: Automated bots constantly scan the internet for paths like {path}. A business "
-                    f"that left a default admin URL accessible was compromised when a bot found it, brute-forced "
-                    f"a weak password in minutes, and installed backdoor malware — all without any human attacker "
-                    f"being involved."
-                ),
-                how_to_fix=(
-                    f"Restrict access to {path} by IP allowlist, move it to a non-standard path, or disable it "
-                    f"if not needed. Nginx: 'location ^~ {path} {{ allow YOUR_IP; deny all; }}'. "
-                    f"Also ensure strong, unique credentials are set for any admin accounts, and enable "
-                    f"multi-factor authentication where supported."
-                )
+                cwe=narrative["cwe"],
+                business_risk=narrative["business_risk"].format(path=path),
+                real_world_example=narrative["real_world_example"].format(path=path),
+                how_to_fix=narrative["how_to_fix"].format(path=path),
+                confidence=confidence,
             ))
         except Exception:
             continue
