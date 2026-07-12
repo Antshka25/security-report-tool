@@ -20,7 +20,8 @@ RISK_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "INFO": 3}
 
 MAX_TARGETS     = 4   # cap how many forms/params we probe per scan
 REQUEST_TIMEOUT = 6
-CMDI_DELAY      = 4   # seconds the sleep payload asks the shell to pause
+CMDI_DELAY         = 4   # seconds the initial sleep payload asks the shell to pause
+CMDI_CONFIRM_DELAY = 9   # longer, distinct delay used to confirm a candidate hit
 
 _XSS_MARKER  = "rvxss1337"
 _XSS_PAYLOAD = f"<{_XSS_MARKER}>"
@@ -37,7 +38,9 @@ _SQL_ERROR_SIGNATURES = [
     "npgsql.", "system.data.sqlclient",
 ]
 
-_CMDI_PAYLOADS = [f"; sleep {CMDI_DELAY}", f"`sleep {CMDI_DELAY}`"]
+# Templates rather than fixed strings — lets the confirmation step in
+# _check_cmdi() re-probe the same injection syntax at a different delay.
+_CMDI_PAYLOAD_TEMPLATES = ["; sleep {d}", "`sleep {d}`"]
 
 _FORM_RE  = re.compile(r"<form\b([^>]*)>(.*?)</form>", re.I | re.S)
 _INPUT_RE = re.compile(r"<(?:input|textarea|select)\b([^>]*)>", re.I)
@@ -375,34 +378,53 @@ def _check_cmdi(target: dict, baseline) -> list[dict]:
     if baseline is not None:
         baseline_elapsed = baseline.elapsed.total_seconds()
 
-    for payload in _CMDI_PAYLOADS:
+    for template in _CMDI_PAYLOAD_TEMPLATES:
+        payload = template.format(d=CMDI_DELAY)
         start = time.monotonic()
         resp = _send(target, payload, timeout=REQUEST_TIMEOUT + CMDI_DELAY + 2)
         elapsed = time.monotonic() - start
         if resp is None:
             continue
-        if elapsed - baseline_elapsed >= CMDI_DELAY - 1:
-            return [_finding(
-                "CMDi", "Command Injection", "HIGH",
-                f"{target['label']} took {elapsed:.1f}s to respond to a harmless 'sleep {CMDI_DELAY}' payload "
-                f"(normal response: {baseline_elapsed:.1f}s), a strong sign the input reaches a system shell",
-                "Possible OS Command Injection",
-                cwe="CWE-78",
-                business_risk=(
-                    "An attacker could potentially run arbitrary commands on your server, reading files, "
-                    "installing malware, or taking the server over completely. This is one of the most "
-                    "severe vulnerabilities a website can have."
-                ),
-                real_world_example=(
-                    "Example: An attacker submits input designed to be passed straight to the server's "
-                    "command line, using it to read files, install a backdoor, or take full control of the "
-                    "server — all through a field that looked like ordinary user input."
-                ),
-                how_to_fix=(
-                    f"Never pass user input directly to a shell command. Use your language's built-in library "
-                    f"functions instead of shell calls, or strictly allow-list expected input. Check {target['label']}."
-                ),
-            )]
+        if elapsed - baseline_elapsed < CMDI_DELAY - 1:
+            continue
+
+        # Candidate hit — a single slow response is weak evidence on its own
+        # (network jitter, a WAF challenge, a momentarily busy server can all
+        # cost 3+ seconds with nothing to do with injection, and this finding
+        # reports as HIGH risk, so a false trigger here is the costliest kind
+        # of false positive in the whole scan). Confirm by re-sending the same
+        # injection syntax with a longer, distinct delay: a genuine shell sleep
+        # scales with the requested duration, a one-off hiccup doesn't repeat
+        # proportionally on demand.
+        confirm_payload = template.format(d=CMDI_CONFIRM_DELAY)
+        start2 = time.monotonic()
+        resp2 = _send(target, confirm_payload, timeout=REQUEST_TIMEOUT + CMDI_CONFIRM_DELAY + 2)
+        elapsed2 = time.monotonic() - start2
+        if resp2 is None or elapsed2 - baseline_elapsed < CMDI_CONFIRM_DELAY - 1:
+            continue  # didn't scale with the longer delay — treat as noise, not injection
+
+        return [_finding(
+            "CMDi", "Command Injection", "HIGH",
+            f"{target['label']} response time scaled with two different harmless 'sleep' payloads "
+            f"({elapsed:.1f}s for sleep {CMDI_DELAY}, {elapsed2:.1f}s for sleep {CMDI_CONFIRM_DELAY}; "
+            f"normal response: {baseline_elapsed:.1f}s), a strong sign the input reaches a system shell",
+            "Possible OS Command Injection",
+            cwe="CWE-78",
+            business_risk=(
+                "An attacker could potentially run arbitrary commands on your server, reading files, "
+                "installing malware, or taking the server over completely. This is one of the most "
+                "severe vulnerabilities a website can have."
+            ),
+            real_world_example=(
+                "Example: An attacker submits input designed to be passed straight to the server's "
+                "command line, using it to read files, install a backdoor, or take full control of the "
+                "server — all through a field that looked like ordinary user input."
+            ),
+            how_to_fix=(
+                f"Never pass user input directly to a shell command. Use your language's built-in library "
+                f"functions instead of shell calls, or strictly allow-list expected input. Check {target['label']}."
+            ),
+        )]
     return []
 
 
