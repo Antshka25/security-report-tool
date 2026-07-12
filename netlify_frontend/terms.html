@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Terms of Service — RapidVuln</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #080C10; --surface: #0D1117; --border: #1C2A3A;
+      --accent: #00E5FF; --text: #E6EDF3; --muted: #7D8590; --card: #0D1825;
+    }
+    body {
+      background: var(--bg); color: var(--text); font-family: 'Space Grotesk', sans-serif;
+      font-size: 16px; line-height: 1.7; min-height: 100vh;
+    }
+    nav {
+      position: sticky; top: 0; z-index: 100; display: flex; align-items: center;
+      justify-content: space-between; padding: 1rem 2.5rem; background: rgba(8,12,16,0.95);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo { font-family: 'Space Mono', monospace; font-size: 1.1rem; font-weight: 700; color: var(--accent); text-decoration: none; letter-spacing: 0.05em; }
+    .logo span { color: var(--text); }
+    nav a.back { color: var(--muted); text-decoration: none; font-size: 0.875rem; }
+    nav a.back:hover { color: var(--text); }
+    main { max-width: 760px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+    h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 700; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+    .updated { font-family: 'Space Mono', monospace; font-size: 0.8rem; color: var(--muted); margin-bottom: 3rem; }
+    h2 {
+      font-size: 1.2rem; font-weight: 700; color: var(--accent); margin-top: 2.75rem;
+      margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+    }
+    p, li { color: var(--text); font-size: 0.95rem; margin-bottom: 1rem; }
+    ul, ol { padding-left: 1.4rem; margin-bottom: 1rem; }
+    li { margin-bottom: 0.5rem; }
+    strong { color: var(--text); font-weight: 700; }
+    .callout {
+      background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 8px; padding: 1.25rem 1.5rem; margin: 1.5rem 0; font-size: 0.9rem; color: var(--muted);
+    }
+    a { color: var(--accent); }
+    .placeholder { color: #FFB800; }
+    footer { border-top: 1px solid var(--border); padding: 2rem 2.5rem; text-align: center; }
+    footer p { font-size: 0.8rem; color: var(--muted); font-family: 'Space Mono', monospace; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">RAPID<span>VULN</span></a>
+  <a href="/" class="back">← Back to site</a>
+</nav>
+
+<main>
+  <h1>Terms of Service</h1>
+  <p class="updated">Last updated: July 12, 2026</p>
+
+  <p>These Terms of Service ("Terms") govern your access to and use of RapidVuln (the "Service"), operated by RapidVuln ("we," "us," "our"). By using the Service, submitting a website for scanning, or purchasing a subscription, you agree to these Terms. If you don't agree, don't use the Service.</p>
+
+  <h2>1. What RapidVuln Does</h2>
+  <p>RapidVuln runs automated security scans against a website you provide (port/service checks, SSL/TLS analysis, HTTP header review, DNS/email authentication checks, and limited active checks for common web vulnerabilities) and delivers a plain-English report summarizing what was found.</p>
+  <p><strong>The Service is informational only.</strong> It is an automated, point-in-time scan — it is not a professional penetration test, a compliance certification, or a guarantee that a scanned site is secure. Automated tools can miss real issues and can occasionally flag things that turn out not to be problems. You're responsible for independently verifying anything material before acting on it.</p>
+
+  <h2>2. Authorization to Scan — Your Responsibility</h2>
+  <p>Some of what the Service does involves actively probing the target website (for example, submitting test input to forms and URL parameters to check for injection-style vulnerabilities). Running these checks against a website without permission from its owner can violate computer-misuse laws, regardless of intent.</p>
+  <p><strong>By submitting a URL to be scanned, you represent and warrant that you own that website, or you have documented, explicit authorization from its owner to have it scanned.</strong> You are solely responsible for confirming that authorization before submitting a scan. RapidVuln is not responsible for verifying ownership or authorization of any target you submit, and we accept no liability for scans you initiate against a site you weren't authorized to test.</p>
+  <p>We reserve the right to suspend or terminate any account we reasonably suspect is being used to scan targets without proper authorization, and to refuse service for any target at our discretion.</p>
+
+  <h2>3. Accounts and Subscriptions</h2>
+  <ul>
+    <li>Subscription plans, pricing, and billing frequency are as displayed on the Service at the time of purchase.</li>
+    <li>Subscriptions renew automatically for each billing period until canceled. You can cancel at any time; cancellation takes effect at the end of the current billing period.</li>
+    <li>Fees are non-refundable except where required by law or explicitly stated otherwise at the time of purchase.</li>
+    <li>We may change pricing for future billing periods with reasonable advance notice.</li>
+  </ul>
+
+  <h2>4. Acceptable Use</h2>
+  <p>You agree not to:</p>
+  <ul>
+    <li>Submit any target you do not own or are not authorized to have scanned;</li>
+    <li>Use the Service to scan, probe, or test infrastructure belonging to RapidVuln itself without permission;</li>
+    <li>Resell, sublicense, or provide the Service to third parties as your own product without a separate written agreement with us;</li>
+    <li>Attempt to circumvent rate limits, abuse the Service to overwhelm a target, or use it for any unlawful purpose;</li>
+    <li>Reverse-engineer or attempt to extract the underlying scanning logic for competitive use.</li>
+  </ul>
+
+  <h2>5. No Warranty</h2>
+  <p>The Service is provided "as is" and "as available," without warranties of any kind, express or implied, including implied warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that the Service will identify every vulnerability present on a scanned site, that findings are free of false positives or false negatives, or that use of the Service will prevent a security incident.</p>
+
+  <h2>6. Limitation of Liability</h2>
+  <p>To the maximum extent permitted by law, RapidVuln and its owners/operators will not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of data, revenue, or business opportunity, arising from your use of the Service — including damages resulting from a security incident on a scanned site, action taken (or not taken) based on a report, or any legal consequence of scanning a target without proper authorization. Our total liability for any claim relating to the Service will not exceed the amount you paid us in the twelve (12) months before the claim arose.</p>
+
+  <h2>7. Indemnification</h2>
+  <p>You agree to indemnify and hold RapidVuln harmless from any claim, damage, or expense (including reasonable legal fees) arising from your breach of these Terms, your submission of an unauthorized scan target, or your misuse of the Service.</p>
+
+  <h2>8. Termination</h2>
+  <p>We may suspend or terminate your access to the Service at any time for violation of these Terms. You may stop using the Service and cancel your subscription at any time.</p>
+
+  <h2>9. Changes to These Terms</h2>
+  <p>We may update these Terms from time to time. Continued use of the Service after changes take effect constitutes acceptance of the revised Terms. Material changes will be reflected by updating the "Last updated" date above.</p>
+
+  <h2>10. Governing Law</h2>
+  <p>These Terms are governed by the laws of <span class="placeholder">[state/jurisdiction to be filled in]</span>, without regard to conflict-of-law principles.</p>
+
+  <h2>11. Contact</h2>
+  <p>Questions about these Terms: <span class="placeholder">[support/contact email]</span></p>
+
+  <div class="callout">
+    This document is a starting draft covering the key points discussed for this service (authorization responsibility, liability limits, no-warranty language, subscription basics) — it has not been reviewed by a lawyer. Have an actual attorney review and finalize it, and fill in the governing-law and contact placeholders above, before relying on it for a paid product.
+  </div>
+</main>
+
+<footer>
+  <p>© 2026 RAPIDVULN — <a href="/privacy.html">Privacy Policy</a></p>
+</footer>
+
+</body>
+</html>

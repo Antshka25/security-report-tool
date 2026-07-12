@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Privacy Policy — RapidVuln</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #080C10; --surface: #0D1117; --border: #1C2A3A;
+      --accent: #00E5FF; --text: #E6EDF3; --muted: #7D8590; --card: #0D1825;
+    }
+    body {
+      background: var(--bg); color: var(--text); font-family: 'Space Grotesk', sans-serif;
+      font-size: 16px; line-height: 1.7; min-height: 100vh;
+    }
+    nav {
+      position: sticky; top: 0; z-index: 100; display: flex; align-items: center;
+      justify-content: space-between; padding: 1rem 2.5rem; background: rgba(8,12,16,0.95);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo { font-family: 'Space Mono', monospace; font-size: 1.1rem; font-weight: 700; color: var(--accent); text-decoration: none; letter-spacing: 0.05em; }
+    .logo span { color: var(--text); }
+    nav a.back { color: var(--muted); text-decoration: none; font-size: 0.875rem; }
+    nav a.back:hover { color: var(--text); }
+    main { max-width: 760px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+    h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 700; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+    .updated { font-family: 'Space Mono', monospace; font-size: 0.8rem; color: var(--muted); margin-bottom: 3rem; }
+    h2 {
+      font-size: 1.2rem; font-weight: 700; color: var(--accent); margin-top: 2.75rem;
+      margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+    }
+    p, li { color: var(--text); font-size: 0.95rem; margin-bottom: 1rem; }
+    ul, ol { padding-left: 1.4rem; margin-bottom: 1rem; }
+    li { margin-bottom: 0.5rem; }
+    strong { color: var(--text); font-weight: 700; }
+    .callout {
+      background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 8px; padding: 1.25rem 1.5rem; margin: 1.5rem 0; font-size: 0.9rem; color: var(--muted);
+    }
+    a { color: var(--accent); }
+    .placeholder { color: #FFB800; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0 1.5rem; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 0.6rem 0.75rem; border: 1px solid var(--border); }
+    th { background: var(--card); color: var(--accent); font-family: 'Space Mono', monospace; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    footer { border-top: 1px solid var(--border); padding: 2rem 2.5rem; text-align: center; }
+    footer p { font-size: 0.8rem; color: var(--muted); font-family: 'Space Mono', monospace; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">RAPID<span>VULN</span></a>
+  <a href="/" class="back">← Back to site</a>
+</nav>
+
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: July 12, 2026</p>
+
+  <p>This Privacy Policy explains what information RapidVuln ("we," "us," "our") collects when you use our website security scanning service (the "Service"), and how we use it.</p>
+
+  <h2>1. What We Collect</h2>
+  <table>
+    <tr><th>Data</th><th>When</th><th>Why</th></tr>
+    <tr><td>Website/domain you submit</td><td>When you run a scan</td><td>To run the scan and generate your report</td></tr>
+    <tr><td>Name, email, business name</td><td>When you request a report be emailed to you</td><td>To deliver the report and identify who it belongs to</td></tr>
+    <tr><td>Payment details</td><td>When you subscribe to a paid plan</td><td>To process billing — handled directly by our payment processor (Stripe); we do not store your card details ourselves</td></tr>
+    <tr><td>Basic usage/technical data (IP address, browser type)</td><td>Automatically, when you use the site</td><td>Security, abuse prevention, and troubleshooting</td></tr>
+  </table>
+
+  <h2>2. How We Use Scan Results</h2>
+  <p>Scan reports are generated for the domain you submitted and are only made available to you (via the email address you provided, or immediately on-screen for a one-time free scan). We don't publish, sell, or share the contents of an individual scan report with anyone else.</p>
+
+  <h2>3. Third Parties We Use</h2>
+  <ul>
+    <li><strong>Stripe</strong> — processes payments for paid subscriptions. Stripe has its own privacy policy governing payment data.</li>
+    <li><strong>NVD (National Vulnerability Database)</strong> — we query NVD's public API to check detected software versions against known vulnerabilities. We only send generic product/version strings, never anything identifying you or the site's owner.</li>
+    <li>Hosting/infrastructure providers that run the Service.</li>
+  </ul>
+  <p>We do not sell your personal information to anyone.</p>
+
+  <h2>4. Data Retention</h2>
+  <p>We retain scan results and associated contact info for as long as needed to provide the Service (for example, so a monitoring subscription can compare against prior scans) or as required by law. You can request deletion at any time — see Section 6.</p>
+
+  <h2>5. Security</h2>
+  <p>We take reasonable measures to protect the data we hold, but no method of storage or transmission is 100% secure, and we can't guarantee absolute security.</p>
+
+  <h2>6. Your Rights</h2>
+  <p>You can request access to, correction of, or deletion of your personal data by contacting us at <span class="placeholder">[support/contact email]</span>. Depending on where you're located, you may have additional rights under laws like the CCPA or GDPR.</p>
+
+  <h2>7. Children's Privacy</h2>
+  <p>The Service is intended for business use and is not directed at children under 13. We do not knowingly collect personal information from children.</p>
+
+  <h2>8. Changes to This Policy</h2>
+  <p>We may update this Privacy Policy from time to time. Material changes will be reflected by updating the "Last updated" date above.</p>
+
+  <h2>9. Contact</h2>
+  <p>Questions about this policy: <span class="placeholder">[support/contact email]</span></p>
+
+  <div class="callout">
+    This document is a starting draft based on what the Service actually collects and does today — it has not been reviewed by a lawyer. Have an attorney confirm it matches your actual data practices (especially once payments are live and you know your real customer base/jurisdictions), and fill in the contact placeholder above, before relying on it for a paid product.
+  </div>
+</main>
+
+<footer>
+  <p>© 2026 RAPIDVULN — <a href="/terms.html">Terms of Service</a></p>
+</footer>
+
+</body>
+</html>
