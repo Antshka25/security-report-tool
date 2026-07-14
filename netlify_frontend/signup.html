@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign Up — RapidVuln</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080C10;
+      --surface:   #0D1117;
+      --border:    #1C2A3A;
+      --accent:    #00E5FF;
+      --accent2:   #0066FF;
+      --danger:    #FF4444;
+      --warn:      #FFB800;
+      --ok:        #00C853;
+      --text:      #E6EDF3;
+      --muted:     #7D8590;
+      --card:      #0D1825;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1.5rem;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .logo {
+      font-family: 'Space Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      text-decoration: none;
+      margin-bottom: 2rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo span { color: var(--text); }
+
+    .auth-box {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2.5rem;
+      position: relative;
+      z-index: 1;
+      box-shadow: 0 30px 80px -30px rgba(0,229,255,0.18), 0 0 0 1px rgba(255,255,255,0.02);
+    }
+
+    .auth-box h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+
+    .auth-box p.sub {
+      color: var(--muted);
+      font-size: 0.875rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .form-group { margin-bottom: 1.1rem; }
+
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-family: 'Space Mono', monospace;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+
+    .form-group input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.8rem 1rem;
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus { border-color: var(--accent); }
+    .form-group small { display: block; margin-top: 0.35rem; color: var(--muted); font-size: 0.72rem; }
+
+    .auth-btn {
+      width: 100%;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 6px;
+      padding: 0.85rem;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin-top: 0.5rem;
+      box-shadow: 0 8px 24px -8px rgba(0,229,255,0.4);
+      transition: opacity 0.2s, transform 0.15s;
+    }
+
+    .auth-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .auth-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .auth-error {
+      display: none;
+      margin-top: 1rem;
+      padding: 0.65rem 0.9rem;
+      border-radius: 6px;
+      background: rgba(255,68,68,0.1);
+      border: 1px solid rgba(255,68,68,0.3);
+      color: var(--danger);
+      font-size: 0.82rem;
+    }
+
+    .auth-footer {
+      margin-top: 1.5rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .auth-footer a { color: var(--accent); text-decoration: none; }
+    .auth-footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<a href="/" class="logo">RAPID<span>VULN</span></a>
+
+<div class="auth-box">
+  <h1>Create your account</h1>
+  <p class="sub">Track scan history, manage monitors, and view billing in one place.</p>
+
+  <form id="signup-form" autocomplete="on">
+    <div class="form-group">
+      <label for="signup-email">Email</label>
+      <input id="signup-email" type="email" placeholder="you@company.com" autocomplete="email" required/>
+    </div>
+    <div class="form-group">
+      <label for="signup-password">Password</label>
+      <input id="signup-password" type="password" placeholder="At least 8 characters" autocomplete="new-password" required/>
+      <small>Minimum 8 characters.</small>
+    </div>
+    <button type="submit" class="auth-btn" id="signup-btn">Create Account →</button>
+    <p class="auth-error" id="signup-error"></p>
+  </form>
+
+  <div class="auth-footer">
+    Already have an account? <a href="/login.html">Log in</a>
+  </div>
+</div>
+
+<script>
+  const BACKEND_URL = "https://web-production-dc0f8.up.railway.app";
+
+  document.getElementById("signup-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = document.getElementById("signup-email").value.trim();
+    const password = document.getElementById("signup-password").value;
+    const btn = document.getElementById("signup-btn");
+    const errEl = document.getElementById("signup-error");
+    errEl.style.display = "none";
+
+    if (password.length < 8) {
+      errEl.textContent = "Password must be at least 8 characters";
+      errEl.style.display = "block";
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Creating account…";
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/signup`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        errEl.textContent = data.error || "Signup failed. Please try again.";
+        errEl.style.display = "block";
+        btn.disabled = false;
+        btn.textContent = "Create Account →";
+        return;
+      }
+
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      errEl.textContent = "Could not reach the server. Please try again.";
+      errEl.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "Create Account →";
+    }
+  });
+</script>
+</body>
+</html>

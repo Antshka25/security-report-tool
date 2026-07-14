@@ -4,14 +4,17 @@ Run: python app.py
 """
 import os
 import uuid
+import sqlite3
 import threading
 import time
 import json
 import base64
+from functools import wraps
 import requests as http_requests
 from datetime import datetime
 from flask import (Flask, render_template, request, jsonify,
-                   send_file, abort, redirect)
+                   send_file, abort, redirect, session)
+from werkzeug.security import generate_password_hash, check_password_hash
 import io
 
 from scanner import resolve_target, validate_target, run_scan, build_scan_summary
@@ -39,11 +42,63 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-prod")
 
-# Allow Netlify frontend to call this backend
+_IS_DEV = os.environ.get("FLASK_ENV", "production") == "development"
+
+# Session cookie config for the accounts feature (login/signup/dashboard).
+# The frontend (rapidvuln.com on Netlify) and this API (a different domain on
+# Railway) are cross-site, so a plain cookie would never be sent back on API
+# calls from the frontend — SameSite=None + Secure is required for a
+# cross-site cookie to work at all in any modern browser. Secure is relaxed
+# in dev (FLASK_ENV=development) since that's usually plain http locally.
+app.config["SESSION_COOKIE_SAMESITE"] = "None" if not _IS_DEV else "Lax"
+app.config["SESSION_COOKIE_SECURE"] = not _IS_DEV
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+
+# Allow Netlify frontend to call this backend. Origins are restricted (not
+# "*") and supports_credentials is on, because the two are mutually
+# exclusive per the CORS spec once cookies are involved — a wildcard origin
+# can never be combined with credentialed requests, so the previous
+# origins:"*" setup would have silently blocked the session cookie needed
+# for login/signup/dashboard from ever being sent or received.
+_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get(
+        "ALLOWED_ORIGINS",
+        "https://rapidvuln.com,https://www.rapidvuln.com"
+    ).split(",") if o.strip()
+]
+if _IS_DEV:
+    _ALLOWED_ORIGINS += ["http://localhost:8888", "http://127.0.0.1:8888"]
+
 if HAS_CORS:
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    CORS(app, resources={r"/*": {"origins": _ALLOWED_ORIGINS}}, supports_credentials=True)
 
 db.init_db()
+
+
+# ── Auth helpers ───────────────────────────────────────────────────────────────
+
+def login_required(f):
+    """Gate a route behind an active session — used for every /api/dashboard/*
+    route and for the dashboard's own monitor-management endpoints. Returns a
+    plain 401 JSON error (not a redirect) since these are all API endpoints
+    called via fetch from the frontend, not pages a browser navigates to."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("user_id"):
+            return jsonify({"error": "Please log in to continue"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def _current_user() -> dict:
+    """Returns the logged-in user's row, or {} if not logged in / the session
+    references a deleted account. Callers behind @login_required can still
+    hit the empty-dict case (e.g. account deleted in another tab), so this
+    is deliberately safe to call without an extra existence check first."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return {}
+    return db.get_user_by_id(user_id) or {}
 
 
 # ── Security headers (applied to every response) ──────────────────────────────
@@ -375,6 +430,14 @@ def start_scan():
         "content_discovery": content_discovery,
         "discovery_profile": discovery_profile,
         "started_at": datetime.now().isoformat(),
+        # If the visitor is logged in, tie this scan to their account so it
+        # shows up in their dashboard's scan history — anonymous scanning
+        # (the free landing-page flow) still works exactly as before when
+        # there's no session; this only ever adds an association, never
+        # requires login to run a scan. Subsequent _set_job() calls for this
+        # same job_id don't repeat this field, but db.py's COALESCE on
+        # user_id means it's preserved rather than getting wiped to NULL.
+        "user_id": session.get("user_id"),
     })
 
     thread = threading.Thread(
@@ -449,15 +512,25 @@ def checkout(job_id: str):
     target = report.get("meta", {}).get("target", job.get("target", "your site"))
     base_url = request.url_root.rstrip("/")
 
-    session = stripe.checkout.Session.create(
+    # If the customer is logged in, pre-fill their account email on the Stripe
+    # Checkout page and let Stripe attach/reuse a Customer record for it — this
+    # is what payment_success() below uses to link stripe_customer_id back to
+    # the account for the dashboard's billing tab.
+    user = _current_user()
+    checkout_kwargs = {}
+    if user.get("email"):
+        checkout_kwargs["customer_email"] = user["email"]
+
+    checkout_session = stripe.checkout.Session.create(
         mode="payment",
         line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
         success_url=f"{base_url}/payment-success/{job_id}?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{base_url}/report/{job_id}",
         metadata={"job_id": job_id, "target": target},
+        **checkout_kwargs,
     )
-    _set_job(job_id, {"stripe_session_id": session.id})
-    return redirect(session.url, code=303)
+    _set_job(job_id, {"stripe_session_id": checkout_session.id})
+    return redirect(checkout_session.url, code=303)
 
 
 @app.route("/payment-success/<job_id>")
@@ -472,9 +545,15 @@ def payment_success(job_id: str):
     session_id = request.args.get("session_id", "")
     if session_id and _payments_enabled():
         try:
-            session = stripe.checkout.Session.retrieve(session_id)
-            if session.payment_status == "paid":
+            checkout_session = stripe.checkout.Session.retrieve(session_id)
+            if checkout_session.payment_status == "paid":
                 _set_job(job_id, {"paid": True, "stripe_session_id": session_id})
+                # Link this Stripe customer to the logged-in account (if any)
+                # so the dashboard's billing tab can offer a "Manage billing"
+                # link via Stripe's customer portal.
+                stripe_customer_id = getattr(checkout_session, "customer", None)
+                if session.get("user_id") and stripe_customer_id:
+                    db.set_user_stripe_customer_id(session["user_id"], stripe_customer_id)
         except Exception as e:
             app.logger.error(f"Stripe session verify failed: {e}")
 
@@ -696,22 +775,206 @@ def monitors_page():
     return render_template("monitors.html", monitors=monitors, email=email)
 
 
+def _owned_monitor_or_error(monitor_id: int):
+    """Fetches a monitor and verifies it belongs to the logged-in account.
+    Returns (monitor, None) on success or (None, (response, status)) on
+    failure — callers just do `monitor, err = ...; if err: return err`.
+
+    This check did not exist at all before the accounts feature: any visitor
+    who knew or guessed a monitor_id could pause/resume/delete ANY monitor,
+    since pause_monitor_route/resume_monitor_route/delete_monitor_route took
+    no ownership check whatsoever. Monitors created before accounts existed
+    have user_id=NULL, which will never match a real logged-in user_id, so
+    those old monitors are no longer manageable through these endpoints —
+    an intentional consequence of "start fresh" rather than an oversight."""
+    monitor = db.get_monitor(monitor_id)
+    if not monitor:
+        return None, (jsonify({"error": "Monitor not found"}), 404)
+    if monitor.get("user_id") != session.get("user_id"):
+        return None, (jsonify({"error": "You don't have permission to manage this monitor"}), 403)
+    return monitor, None
+
+
 @app.route("/monitors/<int:monitor_id>/pause", methods=["POST"])
+@login_required
 def pause_monitor_route(monitor_id: int):
+    _, err = _owned_monitor_or_error(monitor_id)
+    if err:
+        return err
     db.set_monitor_active(monitor_id, False)
     return jsonify({"ok": True})
 
 
 @app.route("/monitors/<int:monitor_id>/resume", methods=["POST"])
+@login_required
 def resume_monitor_route(monitor_id: int):
+    _, err = _owned_monitor_or_error(monitor_id)
+    if err:
+        return err
     db.set_monitor_active(monitor_id, True)
     return jsonify({"ok": True})
 
 
 @app.route("/monitors/<int:monitor_id>/delete", methods=["POST"])
+@login_required
 def delete_monitor_route(monitor_id: int):
+    _, err = _owned_monitor_or_error(monitor_id)
+    if err:
+        return err
     db.delete_monitor(monitor_id)
     return jsonify({"ok": True})
+
+
+# ── Accounts (signup / login / logout) ────────────────────────────────────────
+
+@app.route("/api/auth/signup", methods=["POST"])
+def signup():
+    data = request.get_json(silent=True) or {}
+    email    = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not email or "@" not in email:
+        return jsonify({"error": "Please enter a valid email address"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+
+    try:
+        user_id = db.create_user(email, generate_password_hash(password))
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "An account with that email already exists — try logging in instead"}), 409
+
+    session["user_id"] = user_id
+    session["email"] = email
+    return jsonify({"ok": True, "email": email})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    data = request.get_json(silent=True) or {}
+    email    = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    user = db.get_user_by_email(email)
+    if not user or not check_password_hash(user["password_hash"], password):
+        # Same error for "no such account" and "wrong password" — don't leak
+        # which one it was, that's an account-enumeration side channel.
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    session["user_id"] = user["id"]
+    session["email"] = user["email"]
+    return jsonify({"ok": True, "email": user["email"]})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/me")
+def auth_me():
+    """Lets the frontend check login state on page load (e.g. to decide
+    whether to show 'Log in' or 'Dashboard' in the nav) without needing a
+    dedicated /login page redirect. Always 200 — logged-out is a normal,
+    expected state here, not an error."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"logged_in": False})
+    return jsonify({"logged_in": True, "email": session.get("email")})
+
+
+# ── Dashboard (scan history / monitor management / billing) ──────────────────
+
+@app.route("/api/dashboard/scans")
+@login_required
+def dashboard_scans():
+    scans = db.list_history(user_id=session["user_id"], limit=200)
+    return jsonify({"scans": scans})
+
+
+@app.route("/api/dashboard/monitors", methods=["GET"])
+@login_required
+def dashboard_list_monitors():
+    monitors = db.list_monitors(user_id=session["user_id"])
+    return jsonify({"monitors": monitors})
+
+
+@app.route("/api/dashboard/monitors", methods=["POST"])
+@login_required
+def dashboard_create_monitor():
+    """Two ways to start a monitor from the dashboard: point at one of your
+    own finished scans (job_id — reuses that scan's host/target/business
+    name/scan type, same as the report-page "Monitor this site" button), or
+    specify a host directly. Either way the alert email always goes to the
+    logged-in account's own email — never a client-supplied address — which
+    is the actual safety fix behind "tie scans to one email": the old
+    /monitor endpoint let anyone type ANY email into the box and have alerts
+    (including a live link to the report) sent there instead."""
+    data = request.get_json(silent=True) or {}
+    job_id = (data.get("job_id") or "").strip()
+
+    frequency_days = data.get("frequency_days", 7)
+    try:
+        frequency_days = int(frequency_days)
+    except (TypeError, ValueError):
+        frequency_days = 7
+    if frequency_days not in (1, 7, 30):
+        frequency_days = 7
+
+    if job_id:
+        job = _get_job(job_id)
+        if not job or job.get("status") != "done":
+            return jsonify({"error": "Report not ready"}), 404
+        report        = job.get("report") or {}
+        host          = job.get("host") or report.get("meta", {}).get("host", "")
+        target        = job.get("target") or report.get("meta", {}).get("target", host)
+        business_name = job.get("business_name", "")
+        scan_type     = job.get("scan_type", "standard")
+    else:
+        host          = (data.get("host") or "").strip()
+        target        = (data.get("target") or host).strip()
+        business_name = (data.get("business_name") or "").strip()
+        scan_type     = data.get("scan_type", "standard")
+
+    if not host:
+        return jsonify({"error": "A host or job_id is required"}), 400
+
+    user = _current_user()
+    monitor_id = db.create_monitor(
+        host, target, business_name, scan_type,
+        user["email"], frequency_days, user_id=session["user_id"],
+    )
+    label = {1: "day", 7: "week", 30: "month"}.get(frequency_days, f"{frequency_days} days")
+    return jsonify({
+        "ok": True,
+        "monitor_id": monitor_id,
+        "message": f"Now monitoring {host} every {label} — alerts go to {user['email']}",
+    })
+
+
+@app.route("/api/dashboard/billing")
+@login_required
+def dashboard_billing():
+    user = _current_user()
+    paid_scans = [s for s in db.list_history(user_id=session["user_id"], limit=500) if s.get("paid")]
+
+    billing_portal_url = None
+    if user.get("stripe_customer_id") and _payments_enabled():
+        try:
+            portal = stripe.billing_portal.Session.create(
+                customer=user["stripe_customer_id"],
+                return_url=f"{request.url_root.rstrip('/')}/dashboard.html",
+            )
+            billing_portal_url = portal.url
+        except Exception as e:
+            app.logger.warning(f"Stripe billing portal session failed for user {user.get('id')}: {e}")
+
+    return jsonify({
+        "email":              user.get("email"),
+        "paid_report_count":  len(paid_scans),
+        "has_billing_history": bool(user.get("stripe_customer_id")),
+        "billing_portal_url": billing_portal_url,
+    })
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────

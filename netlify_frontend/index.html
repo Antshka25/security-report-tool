@@ -824,6 +824,7 @@
     <li><a href="#checks">What we check</a></li>
     <li><a href="#pricing">Pricing</a></li>
     <li><a href="/blog/">Blog</a></li>
+    <li><a href="/login.html" id="nav-auth-link">Log in</a></li>
     <li><a href="#scan-top" class="nav-cta">Free scan</a></li>
   </ul>
 </nav>
@@ -1028,6 +1029,21 @@
   window.addEventListener('scroll', () => {
     document.querySelector('nav').classList.toggle('scrolled', window.scrollY > 10);
   }, { passive: true });
+
+  // Swap "Log in" -> "Dashboard" in the nav if the visitor already has a session
+  (function () {
+    const link = document.getElementById('nav-auth-link');
+    if (!link) return;
+    fetch(`${BACKEND_URL}/api/auth/me`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.logged_in) {
+          link.textContent = 'Dashboard';
+          link.href = '/dashboard.html';
+        }
+      })
+      .catch(() => {});
+  })();
 
   // Scroll-reveal animations (staggered per group)
   (function () {

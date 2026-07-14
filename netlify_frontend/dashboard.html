@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard — RapidVuln</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080C10;
+      --surface:   #0D1117;
+      --border:    #1C2A3A;
+      --accent:    #00E5FF;
+      --accent2:   #0066FF;
+      --danger:    #FF4444;
+      --warn:      #FFB800;
+      --ok:        #00C853;
+      --text:      #E6EDF3;
+      --muted:     #7D8590;
+      --card:      #0D1825;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2.5rem;
+      background: rgba(8,12,16,0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-family: 'Space Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      text-decoration: none;
+    }
+
+    .logo span { color: var(--text); }
+
+    .nav-right { display: flex; align-items: center; gap: 1.25rem; }
+    .nav-email { font-size: 0.82rem; color: var(--muted); font-family: 'Space Mono', monospace; }
+
+    .logout-btn {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 1rem;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+    main {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    main h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 1.75rem; }
+
+    .tab-row { display: flex; gap: 8px; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .tab-btn {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 700;
+      font-family: 'Space Grotesk', sans-serif;
+      padding: 0.6rem 1.1rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .tab-btn.active { color: var(--bg); border-color: var(--accent); background: var(--accent); }
+
+    .tab-panel[hidden] { display: none; }
+
+    .card-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .row-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .row-main { flex: 1; min-width: 200px; }
+    .row-host { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.2rem; }
+    .row-meta { font-size: 0.78rem; color: var(--muted); font-family: 'Space Mono', monospace; }
+
+    .risk-badge {
+      padding: 0.25rem 0.7rem;
+      border-radius: 100px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      font-family: 'Space Mono', monospace;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .risk-critical, .risk-high { background: rgba(255,68,68,0.15); color: var(--danger); border: 1px solid rgba(255,68,68,0.3); }
+    .risk-medium { background: rgba(255,184,0,0.12); color: var(--warn); border: 1px solid rgba(255,184,0,0.3); }
+    .risk-low    { background: rgba(0,200,83,0.12); color: var(--ok); border: 1px solid rgba(0,200,83,0.3); }
+
+    .row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+    .btn-sm {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.45rem 0.85rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: 'Space Grotesk', sans-serif;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1.5rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .empty-state a { color: var(--accent); text-decoration: none; }
+
+    .billing-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.75rem;
+    }
+
+    .billing-stat { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 1.25rem; }
+    .billing-stat .num { font-family: 'Space Mono', monospace; font-size: 2rem; font-weight: 700; color: var(--accent); }
+    .billing-stat .label { font-size: 0.85rem; color: var(--muted); }
+
+    .status-pill {
+      font-size: 0.68rem;
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      padding: 0.2rem 0.6rem;
+      border-radius: 100px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .status-active { background: rgba(0,200,83,0.12); color: var(--ok); border: 1px solid rgba(0,200,83,0.3); }
+    .status-paused { background: rgba(125,133,144,0.15); color: var(--muted); border: 1px solid var(--border); }
+
+    .loading { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.85rem; }
+
+    #gate-message {
+      display: none;
+      max-width: 500px;
+      margin: 6rem auto 0;
+      text-align: center;
+      padding: 2rem;
+      position: relative;
+      z-index: 1;
+    }
+    #gate-message a {
+      display: inline-block;
+      margin-top: 1rem;
+      background: var(--accent);
+      color: var(--bg);
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      font-weight: 700;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 600px) {
+      nav { padding: 1rem 1.25rem; }
+      main { padding: 1.75rem 1.25rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav id="nav-bar" style="display:none;">
+  <a href="/" class="logo">RAPID<span>VULN</span></a>
+  <div class="nav-right">
+    <span class="nav-email" id="nav-email"></span>
+    <button class="logout-btn" id="logout-btn">Log out</button>
+  </div>
+</nav>
+
+<div id="gate-message">
+  <p style="color:var(--muted); font-size:0.95rem;">Checking your session…</p>
+</div>
+
+<main id="dashboard-main" style="display:none;">
+  <h1>Dashboard</h1>
+
+  <div class="tab-row">
+    <button class="tab-btn active" id="tab-btn-scans" onclick="showTab('scans')">📋 Scan History</button>
+    <button class="tab-btn" id="tab-btn-monitors" onclick="showTab('monitors')">🔁 Monitors</button>
+    <button class="tab-btn" id="tab-btn-billing" onclick="showTab('billing')">💳 Billing</button>
+  </div>
+
+  <div class="tab-panel" id="tab-panel-scans">
+    <div class="loading" id="scans-loading">Loading scan history…</div>
+    <div class="card-list" id="scans-list" style="display:none;"></div>
+  </div>
+
+  <div class="tab-panel" id="tab-panel-monitors" hidden>
+    <div class="loading" id="monitors-loading">Loading monitors…</div>
+    <div class="card-list" id="monitors-list" style="display:none;"></div>
+  </div>
+
+  <div class="tab-panel" id="tab-panel-billing" hidden>
+    <div class="loading" id="billing-loading">Loading billing info…</div>
+    <div class="billing-card" id="billing-card" style="display:none;"></div>
+  </div>
+</main>
+
+<script>
+  const BACKEND_URL = "https://web-production-dc0f8.up.railway.app";
+  const RISK_CLASS = { CRITICAL: "risk-critical", HIGH: "risk-high", MEDIUM: "risk-medium", LOW: "risk-low" };
+
+  function showTab(tab) {
+    const panels = { scans: "tab-panel-scans", monitors: "tab-panel-monitors", billing: "tab-panel-billing" };
+    const buttons = { scans: "tab-btn-scans", monitors: "tab-btn-monitors", billing: "tab-btn-billing" };
+    for (const key in panels) {
+      const panel = document.getElementById(panels[key]);
+      const btn = document.getElementById(buttons[key]);
+      if (key === tab) { panel.hidden = false; btn.classList.add("active"); }
+      else { panel.hidden = true; btn.classList.remove("active"); }
+    }
+  }
+
+  async function boot() {
+    let me;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: "include" });
+      me = await res.json();
+    } catch (e) {
+      document.getElementById("gate-message").innerHTML =
+        '<p style="color:var(--danger);">Could not reach the server. Please try again later.</p>';
+      document.getElementById("gate-message").style.display = "block";
+      return;
+    }
+
+    if (!me.logged_in) {
+      document.getElementById("gate-message").innerHTML =
+        '<p style="color:var(--muted);">You need to log in to view your dashboard.</p>' +
+        '<a href="/login.html">Log In →</a>';
+      document.getElementById("gate-message").style.display = "block";
+      return;
+    }
+
+    document.getElementById("nav-email").textContent = me.email;
+    document.getElementById("nav-bar").style.display = "flex";
+    document.getElementById("dashboard-main").style.display = "block";
+
+    loadScans();
+    loadMonitors();
+    loadBilling();
+  }
+
+  document.getElementById("logout-btn").addEventListener("click", async () => {
+    await fetch(`${BACKEND_URL}/api/auth/logout`, { method: "POST", credentials: "include" });
+    window.location.href = "/";
+  });
+
+  async function loadScans() {
+    const loadingEl = document.getElementById("scans-loading");
+    const listEl = document.getElementById("scans-list");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/dashboard/scans`, { credentials: "include" });
+      const data = await res.json();
+      const scans = data.scans || [];
+
+      loadingEl.style.display = "none";
+      listEl.style.display = "flex";
+
+      if (scans.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No scans yet. <a href="/">Run your first scan →</a></div>';
+        return;
+      }
+
+      listEl.innerHTML = scans.map((s) => {
+        const riskClass = RISK_CLASS[(s.risk_label || "").toUpperCase()] || "risk-low";
+        const date = s.finished_at ? new Date(s.finished_at).toLocaleString() : (s.started_at ? new Date(s.started_at).toLocaleString() : "");
+        const jobId = s.job_id || s.id;
+        return `
+          <div class="row-card">
+            <div class="row-main">
+              <div class="row-host">${escapeHtml(s.host || s.target || "Unknown target")}</div>
+              <div class="row-meta">${date}</div>
+            </div>
+            ${s.risk_label ? `<span class="risk-badge ${riskClass}">${s.risk_label} · ${s.risk_score ?? "?"}/10</span>` : ""}
+            <div class="row-actions">
+              <a class="btn-sm" href="${BACKEND_URL}/report/${jobId}" target="_blank">View Report</a>
+              <a class="btn-sm" href="${BACKEND_URL}/download/${jobId}">Download PDF</a>
+            </div>
+          </div>`;
+      }).join("");
+    } catch (e) {
+      loadingEl.textContent = "Could not load scan history.";
+    }
+  }
+
+  async function loadMonitors() {
+    const loadingEl = document.getElementById("monitors-loading");
+    const listEl = document.getElementById("monitors-list");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/dashboard/monitors`, { credentials: "include" });
+      const data = await res.json();
+      const monitors = data.monitors || [];
+
+      loadingEl.style.display = "none";
+      listEl.style.display = "flex";
+
+      if (monitors.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No active monitors. Set one up from any scan report page.</div>';
+        return;
+      }
+
+      listEl.innerHTML = monitors.map((m) => {
+        const isActive = m.active !== false && m.active !== 0;
+        const freqLabel = { 1: "daily", 7: "weekly", 30: "monthly" }[m.frequency_days] || `every ${m.frequency_days} days`;
+        return `
+          <div class="row-card" data-monitor-id="${m.id}">
+            <div class="row-main">
+              <div class="row-host">${escapeHtml(m.host || m.target || "Unknown target")}</div>
+              <div class="row-meta">Scans ${freqLabel} · last score: ${m.last_score ?? "—"}</div>
+            </div>
+            <span class="status-pill ${isActive ? "status-active" : "status-paused"}">${isActive ? "Active" : "Paused"}</span>
+            <div class="row-actions">
+              ${isActive
+                ? `<button class="btn-sm" onclick="toggleMonitor(${m.id}, 'pause')">Pause</button>`
+                : `<button class="btn-sm" onclick="toggleMonitor(${m.id}, 'resume')">Resume</button>`}
+              <button class="btn-sm danger" onclick="deleteMonitor(${m.id})">Delete</button>
+            </div>
+          </div>`;
+      }).join("");
+    } catch (e) {
+      loadingEl.textContent = "Could not load monitors.";
+    }
+  }
+
+  async function toggleMonitor(id, action) {
+    try {
+      await fetch(`${BACKEND_URL}/monitors/${id}/${action}`, { method: "POST", credentials: "include" });
+      loadMonitors();
+    } catch (e) { /* silent — list will just stay stale until next reload */ }
+  }
+
+  async function deleteMonitor(id) {
+    if (!confirm("Stop monitoring this site? This can't be undone.")) return;
+    try {
+      await fetch(`${BACKEND_URL}/monitors/${id}/delete`, { method: "POST", credentials: "include" });
+      loadMonitors();
+    } catch (e) { /* silent */ }
+  }
+
+  async function loadBilling() {
+    const loadingEl = document.getElementById("billing-loading");
+    const cardEl = document.getElementById("billing-card");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/dashboard/billing`, { credentials: "include" });
+      const data = await res.json();
+
+      loadingEl.style.display = "none";
+      cardEl.style.display = "block";
+
+      cardEl.innerHTML = `
+        <div class="billing-stat">
+          <span class="num">${data.paid_report_count ?? 0}</span>
+          <span class="label">paid report${data.paid_report_count === 1 ? "" : "s"} purchased</span>
+        </div>
+        ${data.has_billing_history && data.billing_portal_url
+          ? `<a class="btn-sm" style="padding:0.75rem 1.25rem;" href="${data.billing_portal_url}">Manage Billing →</a>`
+          : `<p style="color:var(--muted); font-size:0.85rem;">No billing history yet — this will populate after your first paid report.</p>`}
+      `;
+    } catch (e) {
+      loadingEl.textContent = "Could not load billing info.";
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str == null ? "" : String(str);
+    return div.innerHTML;
+  }
+
+  boot();
+</script>
+</body>
+</html>

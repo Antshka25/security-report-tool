@@ -174,6 +174,21 @@ def generate_report(summary: dict, business_name: str = "",
         if f.get("real_world_example") and f["real_world_example"] not in real_examples:
             f["real_world_example"] = ""
 
+    # Tag content_discovery findings so report.html can split them into their
+    # own tab. The JSON schema the model returns has no "category" field (it
+    # was never asked for one), so this can't just trust something the model
+    # wrote — instead it keys off "port"/"service", which the model DOES
+    # reliably copy from PORT DETAILS for every other purpose already:
+    # content_discovery_checks.py's _finding() always sets port="PATH" and
+    # service="Content Discovery" (see that module), and _build_prompt's
+    # _label() passes "PATH" through to the model verbatim (it isn't a digit
+    # and isn't the "dns" category, so it falls through unchanged). Every
+    # other category (web/dns/vuln/cve/supply_chain/port) doesn't need this
+    # tag — report.html only ever checks for "content_discovery" specifically.
+    for f in report["findings"]:
+        if str(f.get("port", "")).upper() == "PATH" or f.get("service") == "Content Discovery":
+            f["category"] = "content_discovery"
+
     # Attach human-readable name/explanation for any recognized CWE id.
     annotate_findings(report["findings"])
 
@@ -312,6 +327,11 @@ def generate_report_fallback(summary: dict, business_name: str = "",
             "urgency":      urgency,
             "cwe":          p.get("cwe", ""),
             "real_world_example": p.get("real_world_example", ""),
+            # Preserved so report.html can split content_discovery findings into
+            # their own tab (see the tab-row logic there) — this was missing
+            # entirely before, which would have made that split silently find
+            # nothing, since every finding here previously carried no category.
+            "category":     cat,
         })
 
     # Attach human-readable name/explanation for any recognized CWE id.

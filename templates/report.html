@@ -72,6 +72,13 @@
     .stat-num { font-size: 28px; font-weight: 900; }
     .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
+    /* Findings tabs */
+    .tab-row { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tab-btn { background: var(--card); border: 1px solid var(--border); color: var(--muted); font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 9px; cursor: pointer; }
+    .tab-btn.active { color: var(--white); border-color: var(--accent); background: rgba(124,58,237,0.12); }
+    .tab-panel[hidden] { display: none; }
+    .tab-hint { font-size: 12px; color: var(--muted); margin: -6px 0 14px 4px; }
+
     /* Findings */
     .finding { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
     .finding-header { display: flex; align-items: center; gap: 12px; padding: 16px 18px; cursor: pointer; user-select: none; }
@@ -219,56 +226,91 @@
   {% endif %}
 
   <!-- Findings -->
-  {% if report.findings %}
-  <section>
-    <div class="section-title">🔍 Detailed Findings ({{ report.findings | length }})</div>
-
-    {% for f in report.findings %}
-    {% set sev = f.severity | upper %}
-    <div class="finding" id="finding-{{ loop.index }}">
-      <div class="finding-header" onclick="toggleFinding('finding-{{ loop.index }}')">
-        <div class="sev-dot dot-{{ sev }}"></div>
-        <div class="finding-title">{{ f.title or (f.service ~ ' — Port ' ~ f.port) }}</div>
-        <div class="finding-port">Port {{ f.port }}</div>
-        <span class="sev-badge sev-{{ sev }}">{{ sev }}</span>
-        {% if f.urgency %}
-        <span class="urgency-tag">{{ f.urgency }}</span>
-        {% endif %}
-        {% if f.cwe %}
-        <span class="cwe-tag" title="{{ f.cwe }}{% if f.cwe_name %} — {{ f.cwe_name }}{% endif %}{% if f.cwe_desc %}: {{ f.cwe_desc }}{% endif %}">{{ f.cwe }}</span>
-        {% endif %}
-        <span class="chevron">▼</span>
-      </div>
-      <div class="finding-body">
-        <div class="finding-grid">
-          <div class="finding-section">
-            <label>What it is</label>
-            <p>{{ f.what_it_is or '—' }}</p>
-          </div>
-          <div class="finding-section">
-            <label>Business Risk</label>
-            <p>{{ f.business_risk or '—' }}</p>
-          </div>
-          {% if f.real_world_example %}
-          <div class="finding-section">
-            <label>Real-World Example</label>
-            <p>{{ f.real_world_example }}</p>
-          </div>
-          {% endif %}
-          <div class="finding-section">
-            <label>How to Fix</label>
-            <p>{{ f.how_to_fix or '—' }}</p>
-          </div>
-          {% if f.cwe and f.cwe_name %}
-          <div class="finding-section">
-            <label>Reference</label>
-            <p>{{ f.cwe }} — {{ f.cwe_name }}{% if f.cwe_desc %}<br>{{ f.cwe_desc }}{% endif %}</p>
-          </div>
-          {% endif %}
+  {% macro render_finding(f, dom_id) %}
+  {% set sev = f.severity | upper %}
+  <div class="finding" id="{{ dom_id }}">
+    <div class="finding-header" onclick="toggleFinding('{{ dom_id }}')">
+      <div class="sev-dot dot-{{ sev }}"></div>
+      <div class="finding-title">{{ f.title or (f.service ~ ' — Port ' ~ f.port) }}</div>
+      <div class="finding-port">Port {{ f.port }}</div>
+      <span class="sev-badge sev-{{ sev }}">{{ sev }}</span>
+      {% if f.urgency %}
+      <span class="urgency-tag">{{ f.urgency }}</span>
+      {% endif %}
+      {% if f.cwe %}
+      <span class="cwe-tag" title="{{ f.cwe }}{% if f.cwe_name %} — {{ f.cwe_name }}{% endif %}{% if f.cwe_desc %}: {{ f.cwe_desc }}{% endif %}">{{ f.cwe }}</span>
+      {% endif %}
+      <span class="chevron">▼</span>
+    </div>
+    <div class="finding-body">
+      <div class="finding-grid">
+        <div class="finding-section">
+          <label>What it is</label>
+          <p>{{ f.what_it_is or '—' }}</p>
         </div>
+        <div class="finding-section">
+          <label>Business Risk</label>
+          <p>{{ f.business_risk or '—' }}</p>
+        </div>
+        {% if f.real_world_example %}
+        <div class="finding-section">
+          <label>Real-World Example</label>
+          <p>{{ f.real_world_example }}</p>
+        </div>
+        {% endif %}
+        <div class="finding-section">
+          <label>How to Fix</label>
+          <p>{{ f.how_to_fix or '—' }}</p>
+        </div>
+        {% if f.cwe and f.cwe_name %}
+        <div class="finding-section">
+          <label>Reference</label>
+          <p>{{ f.cwe }} — {{ f.cwe_name }}{% if f.cwe_desc %}<br>{{ f.cwe_desc }}{% endif %}</p>
+        </div>
+        {% endif %}
       </div>
     </div>
-    {% endfor %}
+  </div>
+  {% endmacro %}
+
+  {% set main_findings = report.findings | rejectattr('category', 'equalto', 'content_discovery') | list %}
+  {% set discovery_findings = report.findings | selectattr('category', 'equalto', 'content_discovery') | list %}
+
+  {% if report.findings %}
+  <section>
+    {% if discovery_findings %}
+    <div class="tab-row">
+      <button class="tab-btn active" id="tab-btn-findings" onclick="showReportTab('findings')">
+        🔍 Findings ({{ main_findings | length }})
+      </button>
+      <button class="tab-btn" id="tab-btn-discovery" onclick="showReportTab('discovery')">
+        🗂️ Discovered Paths ({{ discovery_findings | length }})
+      </button>
+    </div>
+    {% else %}
+    <div class="section-title">🔍 Detailed Findings ({{ main_findings | length }})</div>
+    {% endif %}
+
+    <div class="tab-panel" id="tab-panel-findings">
+      {% for f in main_findings %}
+        {{ render_finding(f, 'finding-main-' ~ loop.index) }}
+      {% else %}
+      <div class="exec-card"><p style="color:var(--muted);">No issues found outside of content discovery.</p></div>
+      {% endfor %}
+    </div>
+
+    {% if discovery_findings %}
+    <div class="tab-panel" id="tab-panel-discovery" hidden>
+      <div class="tab-hint">
+        Paths and files found during automated content discovery — mostly informational.
+        A path showing up here confirms it exists and how it responded; it does not by itself mean
+        something is wrong. See each item's severity badge and "Business Risk" section for context.
+      </div>
+      {% for f in discovery_findings %}
+        {{ render_finding(f, 'finding-disc-' ~ loop.index) }}
+      {% endfor %}
+    </div>
+    {% endif %}
   </section>
   {% endif %}
 
@@ -376,6 +418,23 @@
 
   function toggleFinding(id) {
     document.getElementById(id).classList.toggle('open');
+  }
+
+  function showReportTab(tab) {
+    const panels = { findings: 'tab-panel-findings', discovery: 'tab-panel-discovery' };
+    const buttons = { findings: 'tab-btn-findings', discovery: 'tab-btn-discovery' };
+    for (const key in panels) {
+      const panel = document.getElementById(panels[key]);
+      const btn = document.getElementById(buttons[key]);
+      if (!panel || !btn) continue;
+      if (key === tab) {
+        panel.hidden = false;
+        btn.classList.add('active');
+      } else {
+        panel.hidden = true;
+        btn.classList.remove('active');
+      }
+    }
   }
   // Auto-open HIGH severity findings
   document.querySelectorAll('.finding').forEach(el => {

@@ -230,11 +230,17 @@ def _matches_baseline(baseline: list, status: int, text: str) -> bool:
 
 # ── robots.txt / sitemap.xml same-origin path extraction ────────────────────
 
-_ROBOTS_PATH_RE  = re.compile(r"^\s*(?:Disallow|Allow)\s*:\s*(\S+)", re.I | re.M)
+_ROBOTS_PATH_RE  = re.compile(r"^\s*Disallow\s*:\s*(\S+)", re.I | re.M)
 _SITEMAP_LOC_RE  = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
 
 
 def _extract_from_robots(text: str) -> list:
+    """Disallow entries only (not Allow) — a site owner writing "Disallow"
+    is actively telling search engines to stay out of that path, which is a
+    real (if weak) signal it might be worth a second look. An "Allow" entry
+    is the opposite: the owner explicitly saying this is fine to be public,
+    same as a sitemap.xml listing — see _extract_from_sitemap's removal from
+    the seed-path pipeline below for why that's not useful for discovery."""
     paths = []
     for m in _ROBOTS_PATH_RE.finditer(text or ""):
         p = m.group(1).strip()
@@ -256,17 +262,25 @@ def _extract_from_sitemap(text: str, base_netloc: str) -> list:
 
 
 def _discover_seed_paths(client, base_url: str, base_netloc: str) -> list:
+    """Only robots.txt Disallow entries feed the probe list — NOT sitemap.xml.
+    A sitemap is the site publicly declaring "these pages exist and are
+    meant to be found" (often by search engines directly), so probing every
+    <loc> in it and reporting a plain 200 back is pure noise: it just
+    confirms the site does exactly what it said it would do. That was
+    exactly what real feedback on a live scan showed (a run against a large
+    site produced repetitive "Path Discovered" INFO findings for ordinary
+    public pages like /download, /topic, /accessibility-statement — all
+    sitemap entries, zero surprise value). robots.txt Disallow entries are
+    a meaningfully different signal — the owner actively trying to keep
+    something out of search results — so those still seed the probe list.
+    _extract_from_sitemap() is kept (unused here) in case a future profile
+    wants it back behind an explicit opt-in, but it's deliberately not wired
+    into the default pipeline."""
     seeds = []
     try:
         r = client.get(urljoin(base_url + "/", "robots.txt"), timeout=REQUEST_TIMEOUT)
         if r.status_code == 200:
             seeds += _extract_from_robots(r.text)
-    except Exception:
-        pass
-    try:
-        r = client.get(urljoin(base_url + "/", "sitemap.xml"), timeout=REQUEST_TIMEOUT)
-        if r.status_code == 200:
-            seeds += _extract_from_sitemap(r.text, base_netloc)
     except Exception:
         pass
     return seeds
@@ -551,11 +565,21 @@ def _classify(path: str, url: str, status: int, headers, text: str,
         )
 
     # Generic discovered path with normal-looking content and no other signal.
+    # By this point the path is either from the curated built-in list (things
+    # like /old/, /debug/, /internal/ — mildly unusual by nature) or a
+    # robots.txt Disallow entry (the site owner actively tried to keep it out
+    # of search results) — sitemap.xml-derived paths never reach this branch
+    # at all (see _discover_seed_paths), which is what used to make this
+    # finding fire dozens of times per scan for perfectly ordinary public pages.
     return _finding(
         path, url, status, "INFO", "informational",
         f"Path Discovered — {path}",
-        f"{path} returned HTTP {status}, a real distinct response rather than the site's soft-404 page.",
-        how_to_fix="No action needed unless this path should not be public at all.",
+        f"{path} returned HTTP {status}, a real distinct response rather than the site's soft-404 page. "
+        f"This path isn't one a typical visitor would stumble onto by browsing the site normally, which "
+        f"is why it's worth a quick manual look — but its existence alone isn't a vulnerability.",
+        how_to_fix="Open the path yourself and confirm it's meant to be public. If it's leftover "
+                    "debug/test/admin tooling that should have been removed, take it down or restrict "
+                    "it by IP allowlist. If it's intentional, no action needed.",
     )
 
 

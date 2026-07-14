@@ -174,11 +174,46 @@ class TestPathListAndDedup(unittest.TestCase):
         self.assertLessEqual(len(standard), len(thorough))
 
     def test_robots_txt_extraction_ignores_root(self):
+        # Disallow entries seed the probe list (owner actively hiding something
+        # from search engines is a real, if weak, signal). Allow entries do NOT -
+        # an "Allow" is the owner explicitly saying this is meant to be public,
+        # the same reasoning that excludes sitemap.xml entries entirely (see
+        # test_sitemap_urls_never_seed_probe_list below).
         robots = "User-agent: *\nDisallow: /admin/\nDisallow: /\nAllow: /public/\n"
         paths = cd._extract_from_robots(robots)
         self.assertIn("/admin/", paths)
-        self.assertIn("/public/", paths)
+        self.assertNotIn("/public/", paths)
         self.assertNotIn("/", paths)
+
+    def test_sitemap_urls_never_seed_probe_list(self):
+        """Regression test for real user-reported noise: a scan against a large
+        site produced repetitive, low-value "Path Discovered" findings for
+        ordinary public pages (/download, /topic, /accessibility-statement)
+        that were only in the probe list because they were listed in the
+        site's own sitemap.xml. A sitemap is the site publicly declaring these
+        pages exist - probing them and reporting a 200 back is pure noise, so
+        _discover_seed_paths() must never pull sitemap.xml entries into the
+        probe list, even though _extract_from_sitemap() itself still exists."""
+        class FakeResp:
+            def __init__(self, status_code, text):
+                self.status_code = status_code
+                self.text = text
+
+        class FakeClient:
+            def get(self, url, timeout=None):
+                if url.rstrip("/").endswith("robots.txt"):
+                    return FakeResp(200, "User-agent: *\nDisallow: /private-admin/\n")
+                if url.rstrip("/").endswith("sitemap.xml"):
+                    return FakeResp(200, (
+                        "<urlset><url><loc>https://x.test/download</loc></url>"
+                        "<url><loc>https://x.test/topic</loc></url></urlset>"
+                    ))
+                return FakeResp(404, "")
+
+        seeds = cd._discover_seed_paths(FakeClient(), "https://x.test", "x.test")
+        self.assertNotIn("/download", seeds)
+        self.assertNotIn("/topic", seeds)
+        self.assertIn("/private-admin/", seeds)
 
     def test_sitemap_extraction_skips_cross_origin(self):
         sitemap = (
