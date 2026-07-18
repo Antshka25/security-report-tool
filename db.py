@@ -303,6 +303,21 @@ def set_user_stripe_customer_id(user_id: int, stripe_customer_id: str):
             conn.close()
 
 
+def list_users() -> list:
+    """Admin-only listing of every registered account. Deliberately excludes
+    password_hash from the returned rows — callers (the admin dashboard) never
+    need it and there's no reason to let it leave this module."""
+    with _lock:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT id, email, stripe_customer_id, created_at FROM users ORDER BY created_at DESC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Monitors — recurring scheduled re-scans with score-over-time tracking.
 # ---------------------------------------------------------------------------

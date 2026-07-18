@@ -195,6 +195,24 @@ email.
 
 ---
 
+### Step 9 — (Optional) CVE and breach-exposure checks
+
+Two more environment variables enable extra scan checks. Both are optional —
+if unset, the corresponding check silently returns no findings rather than
+failing the scan.
+
+- `NVD_API_KEY` — raises the NVD CVE lookup rate limit from 5 to 50
+  requests/30s. Without it, `cve_checks.py` still works but adds a delay
+  between requests to stay under the unauthenticated limit. Get a key at
+  https://nvd.nist.gov/developers/request-an-api-key.
+- `HIBP_API_KEY` — enables `breach_checks.py`, which checks common business
+  email addresses (info@, admin@, etc.) against HaveIBeenPwned. Requires a
+  paid Core-tier subscription (~$4.39/mo) at
+  https://haveibeenpwned.com/API/Key. Without it, this check is skipped
+  entirely.
+
+---
+
 ## Production checklist
 
 - [ ] nmap installed on server
@@ -206,6 +224,8 @@ email.
 - [ ] Rate limiting added to `/scan` endpoint (prevents abuse)
 - [ ] Consider Redis + Celery to replace in-memory job store for multi-worker deploys
 - [ ] Add payment gate (Stripe) before PDF download for monetization
+- [ ] (Optional) NVD_API_KEY set — raises CVE lookup rate limit
+- [ ] (Optional) HIBP_API_KEY set — enables breach-exposure check
 
 ---
 

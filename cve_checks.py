@@ -43,6 +43,10 @@ _JS_LIB_RE             = re.compile(
 # WordPress's bundled readme.html exposes the core version even when sites strip
 # the <meta name="generator"> tag to hide it — see _fingerprint_wordpress().
 _WP_VERSION_RE         = re.compile(r'Version\s+([\d]+(?:\.[\d]+){1,3})', re.I)
+# Drupal's CHANGELOG.txt starts with a "Drupal X.Y.Z, YYYY-MM-DD" line on every
+# stock install — same long-standing fingerprinting technique as WordPress's
+# readme.html, see _fingerprint_drupal().
+_DRUPAL_VERSION_RE     = re.compile(r'Drupal\s+([\d]+(?:\.[\d]+){1,3})', re.I)
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -55,7 +59,7 @@ def run_cve_checks(host: str) -> list[dict]:
     if not products:
         return []
 
-    findings = []
+    findings = [_stack_finding(products[:MAX_PRODUCTS])]
     for i, (name, version) in enumerate(products[:MAX_PRODUCTS]):
         if i > 0 and REQUEST_DELAY:
             time.sleep(REQUEST_DELAY)
@@ -66,6 +70,33 @@ def run_cve_checks(host: str) -> list[dict]:
 
     findings.sort(key=lambda f: RISK_ORDER.get(f.get("risk", "INFO"), 99))
     return findings
+
+
+def _stack_finding(products: list) -> dict:
+    """Surfaces the fingerprinted tech stack as its own informational finding,
+    independent of whether any CVE was found for it — previously this data was
+    computed for the CVE lookup and then discarded, so a clean site running
+    fully patched software produced zero visibility into what it's even
+    running. Always INFO/LOW risk: detection itself isn't a vulnerability."""
+    stack_list = ", ".join(f"{name.title()} {version}" for name, version in products)
+    return _finding(
+        "HTTPS", "Technology Fingerprint", "INFO",
+        f"Detected technology stack: {stack_list}.",
+        title="Detected Technology Stack",
+        category="fingerprint",
+        business_risk=(
+            "Knowing your exact software versions helps attackers pick targeted exploits instead of "
+            "guessing — this isn't a vulnerability by itself, but it's worth knowing what your site "
+            "publicly reveals about its own software."
+        ),
+        how_to_fix=(
+            "No action required unless you'd prefer to hide version banners (e.g. removing WordPress's "
+            "generator meta tag and readme.html, or disabling Apache/nginx's Server header version string) "
+            "to make automated targeting slightly harder. Keeping the software itself patched matters far "
+            "more than hiding the version number."
+        ),
+        urgency="Informational",
+    )
 
 
 # ── Fingerprinting ───────────────────────────────────────────────────────────
@@ -118,6 +149,9 @@ def _fingerprint(host: str) -> list[tuple]:
     if not any(name == "wordpress" for name, _ in products):
         products.extend(_fingerprint_wordpress(host))
 
+    if not any(name == "drupal" for name, _ in products):
+        products.extend(_fingerprint_drupal(host))
+
     # de-dupe while preserving detection order
     seen = set()
     unique = []
@@ -141,6 +175,25 @@ def _fingerprint_wordpress(host: str) -> list[tuple]:
                 m = _WP_VERSION_RE.search(r.text)
                 if m:
                     return [("wordpress", m.group(1))]
+            break
+        except Exception:
+            continue
+    return []
+
+
+def _fingerprint_drupal(host: str) -> list[tuple]:
+    """Drupal core version disclosure via the default /CHANGELOG.txt file —
+    same rationale as _fingerprint_wordpress(): a stock install ships this
+    file with the version on its first line, and it's rarely removed even on
+    otherwise-hardened sites."""
+    for scheme in ("https", "http"):
+        try:
+            r = httpx.get(f"{scheme}://{host}/CHANGELOG.txt", timeout=REQUEST_TIMEOUT,
+                          follow_redirects=True, verify=False)
+            if r.status_code == 200:
+                m = _DRUPAL_VERSION_RE.search(r.text[:500])
+                if m:
+                    return [("drupal", m.group(1))]
             break
         except Exception:
             continue

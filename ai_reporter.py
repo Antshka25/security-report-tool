@@ -296,12 +296,17 @@ def generate_report_fallback(summary: dict, business_name: str = "",
         what_it_is   = p.get("what_it_is", "")
         biz_risk     = p.get("business_risk", p.get("reason", ""))
 
-        if cat in ("web", "dns", "vuln", "cve", "supply_chain", "content_discovery"):
+        if cat in ("web", "dns", "vuln", "cve", "supply_chain", "content_discovery", "fingerprint", "breach"):
             # web_checks / vuln_checks / cve_checks / supply_chain_checks /
-            # content_discovery_checks findings already have rich data — these
-            # are every non-raw-port category the scan engine produces (checked
-            # against every _finding() category= default in the codebase, not
-            # just the ones that happened to be covered here before).
+            # content_discovery_checks / breach_checks findings already have
+            # rich data — these are every non-raw-port category the scan
+            # engine produces (checked against every _finding() category=
+            # default in the codebase, not just the ones that happened to be
+            # covered here before). "fingerprint" is the tech-stack finding
+            # and "breach" is the email-breach-exposure finding — both would
+            # otherwise fall into the raw-port-lookup else-branch below and
+            # lose their real what_it_is text to a generic "Port X is
+            # running Y" placeholder.
             title    = p.get("title", f"{svc} Issue")
             fix      = existing_fix or _DEFAULT_FIX
             what     = what_it_is or p.get("reason", "")

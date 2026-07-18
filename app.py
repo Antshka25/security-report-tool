@@ -24,6 +24,7 @@ from web_checks import run_web_checks
 from vuln_checks import run_vuln_checks
 from cve_checks import run_cve_checks
 from supply_chain_checks import run_supply_chain_checks
+from breach_checks import run_breach_checks
 from content_discovery_checks import run_content_discovery_checks, DEFAULT_PROFILE as CONTENT_DISCOVERY_DEFAULT_PROFILE
 import db
 
@@ -99,6 +100,34 @@ def _current_user() -> dict:
     if not user_id:
         return {}
     return db.get_user_by_id(user_id) or {}
+
+
+# Admin is derived from an env var, not a DB column or user-editable field —
+# there is no self-service way for any account to become admin. Set
+# ADMIN_EMAILS (comma-separated) in the Railway environment to the site
+# owner's own account email(s) to grant this.
+_ADMIN_EMAILS = {
+    e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
+}
+
+
+def _is_admin() -> bool:
+    email = (session.get("email") or "").lower()
+    return bool(email) and email in _ADMIN_EMAILS
+
+
+def admin_required(f):
+    """Like login_required, but also requires the session email to be in
+    ADMIN_EMAILS. Used for the site-owner-only routes (viewing every user's
+    data, listing accounts) — never exposed to regular customers."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("user_id"):
+            return jsonify({"error": "Please log in to continue"}), 401
+        if not _is_admin():
+            return jsonify({"error": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    return wrapper
 
 
 # ── Security headers (applied to every response) ──────────────────────────────
@@ -205,7 +234,14 @@ def _run_job(job_id: str, host: str, target_display: str,
         except Exception as supply_chain_err:
             app.logger.warning(f"Supply-chain checks failed ({supply_chain_err}), continuing without them")
 
-        # Step 2f: Hidden-directory / sensitive-file discovery — opt-in only,
+        # Step 2f: Business email breach exposure (HaveIBeenPwned lookup on common addresses)
+        _set_job(job_id, {"step": "Checking for breached email addresses…", "progress": 56})
+        try:
+            web_findings.extend(run_breach_checks(host))
+        except Exception as breach_err:
+            app.logger.warning(f"Breach checks failed ({breach_err}), continuing without them")
+
+        # Step 2g: Hidden-directory / sensitive-file discovery — opt-in only,
         # since it's the slowest and highest-request-volume check. Gated behind
         # the same authorization checkbox as the rest of the scan (see
         # start_scan()); this module does normal GETs only, nothing destructive.
@@ -505,7 +541,7 @@ def checkout(job_id: str):
     if not job or job.get("status") != "done":
         abort(404)
 
-    if job.get("paid") or not _payments_enabled():
+    if job.get("paid") or not _payments_enabled() or _is_admin():
         return redirect(f"/download/{job_id}")
 
     report = job.get("report", {})
@@ -598,7 +634,7 @@ def download_pdf(job_id: str):
     if not job or job.get("status") != "done":
         abort(404)
 
-    if _payments_enabled() and not job.get("paid"):
+    if _payments_enabled() and not job.get("paid") and not _is_admin():
         return redirect(f"/checkout/{job_id}")
 
     pdf_bytes = job.get("pdf")
@@ -630,7 +666,7 @@ def email_report(job_id: str):
     if not job or job.get("status") != "done":
         return jsonify({"error": "Report not ready"}), 404
 
-    if _payments_enabled() and not job.get("paid"):
+    if _payments_enabled() and not job.get("paid") and not _is_admin():
         return jsonify({
             "error": "Payment required before emailing the report",
             "checkout_url": f"/checkout/{job_id}",
@@ -790,6 +826,8 @@ def _owned_monitor_or_error(monitor_id: int):
     monitor = db.get_monitor(monitor_id)
     if not monitor:
         return None, (jsonify({"error": "Monitor not found"}), 404)
+    if _is_admin():
+        return monitor, None
     if monitor.get("user_id") != session.get("user_id"):
         return None, (jsonify({"error": "You don't have permission to manage this monitor"}), 403)
     return monitor, None
@@ -880,7 +918,7 @@ def auth_me():
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"logged_in": False})
-    return jsonify({"logged_in": True, "email": session.get("email")})
+    return jsonify({"logged_in": True, "email": session.get("email"), "is_admin": _is_admin()})
 
 
 # ── Dashboard (scan history / monitor management / billing) ──────────────────
@@ -888,15 +926,19 @@ def auth_me():
 @app.route("/api/dashboard/scans")
 @login_required
 def dashboard_scans():
-    scans = db.list_history(user_id=session["user_id"], limit=200)
-    return jsonify({"scans": scans})
+    # Admins (the site owner) see every account's scans, not just their own —
+    # everyone else stays scoped to user_id=session["user_id"] exactly as before.
+    scoped_user_id = None if _is_admin() else session["user_id"]
+    scans = db.list_history(user_id=scoped_user_id, limit=200)
+    return jsonify({"scans": scans, "is_admin_view": _is_admin()})
 
 
 @app.route("/api/dashboard/monitors", methods=["GET"])
 @login_required
 def dashboard_list_monitors():
-    monitors = db.list_monitors(user_id=session["user_id"])
-    return jsonify({"monitors": monitors})
+    scoped_user_id = None if _is_admin() else session["user_id"]
+    monitors = db.list_monitors(user_id=scoped_user_id)
+    return jsonify({"monitors": monitors, "is_admin_view": _is_admin()})
 
 
 @app.route("/api/dashboard/monitors", methods=["POST"])
@@ -975,6 +1017,14 @@ def dashboard_billing():
         "has_billing_history": bool(user.get("stripe_customer_id")),
         "billing_portal_url": billing_portal_url,
     })
+
+
+@app.route("/api/dashboard/admin/users")
+@admin_required
+def dashboard_admin_users():
+    """Site-owner-only: list every registered account. Gated by ADMIN_EMAILS,
+    not by anything a user could set on their own account — see _is_admin()."""
+    return jsonify({"users": db.list_users()})
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────
